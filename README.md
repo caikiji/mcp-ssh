@@ -1,6 +1,39 @@
-# @caikiji/mcp-ssh
+<p align="center">
+  <br/>
+  <h1 align="center">🔌 @caikiji/mcp-ssh</h1>
+  <p align="center">MCP server for SSH remote execution, file transfer, file editing<br/>with automatic backup/trash &amp; <code>~/.ssh/config</code> integration</p>
+  <p align="center">
+    <a href="https://www.npmjs.com/package/@caikiji/mcp-ssh"><img src="https://img.shields.io/npm/v/@caikiji/mcp-ssh?style=flat-square&logo=npm" alt="npm version"/></a>
+    <a href="https://www.npmjs.com/package/@caikiji/mcp-ssh"><img src="https://img.shields.io/npm/dm/@caikiji/mcp-ssh?style=flat-square" alt="npm downloads"/></a>
+    <a href="https://github.com/caikiji/mcp-ssh"><img src="https://img.shields.io/github/stars/caikiji/mcp-ssh?style=flat-square&logo=github" alt="github stars"/></a>
+    <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/文档-中文-blue?style=flat-square" alt="中文文档"/></a>
+    <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js" alt="node version"/>
+    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license"/>
+  </p>
+  <p align="center">
+    <b><a href="#installation">Installation</a></b>
+    ·
+    <b><a href="#configuration">Configuration</a></b>
+    ·
+    <b><a href="#tools">Tools</a></b>
+    ·
+    <b><a href="#backup--trash">Backup &amp; Trash</a></b>
+    ·
+    <b><a href="./README.zh-CN.md">中文文档</a></b>
+  </p>
+  <br/>
+</p>
 
-MCP server for SSH remote execution, file transfer, and file editing with automatic backup/trash management and `~/.ssh/config` integration.
+## ✨ Features
+
+- **🔐 SSH via env** — register multiple servers with password or key auth in a single env var
+- **📋 Config integration** — use or auto-import `~/.ssh/config` hosts (`$config`)
+- **💻 Remote exec** — run commands with optional timeout, PTY, and sudo password support
+- **📁 File transfer** — upload/download via SFTP
+- **📝 File editing** — read, write, search/replace, line operations with automatic backup
+- **🗑️ Trash protection** — deleted files go to `~/.mcp-ssh/trash/` (configurable threshold)
+- **📊 Backup stats** — monitor disk usage of backups and trash across all servers
+- **🐞 Debug mode** — `SSH_DEBUG=true` for connection/exec/SFTP diagnostics
 
 ## Installation
 
@@ -10,36 +43,36 @@ npm install -g @caikiji/mcp-ssh
 
 ## Configuration
 
-### SSH_SERVICES
+### `SSH_SERVICES`
 
-Register one or more servers via the `SSH_SERVICES` environment variable.  
-Multiple servers are separated by `;`.
-
-**Format:** `[name:]user@host[:port]|credential`
+Register servers via environment variable. Separate multiple entries with `;`.
 
 ```
 SSH_SERVICES="web:root@192.168.1.100:22|/path/to/id_rsa;db:deploy@db.internal|db_password"
 ```
 
-- **name** — optional display name in tools (defaults to host). Duplicate names get an auto-increment suffix.
-- **port** — optional, defaults to 22.
-- **credential** — if it's an existing file path, used as SSH private key; otherwise treated as password.
+**Format:** `[name:]user@host[:port]|credential`
 
-### Using ~/.ssh/config
+| Part | Description |
+|------|-------------|
+| `name` | Optional display name (defaults to host). Duplicates get a numeric suffix. |
+| `port` | Optional, defaults to `22`. |
+| `credential` | File path → SSH key, otherwise treated as password. |
 
-Refer to any Host defined in `~/.ssh/config` by name (no `@` needed).  
-HostName, User, Port, and IdentityFile are read automatically.
+### Using `~/.ssh/config`
+
+Reference any Host from `~/.ssh/config` by name (no `@` needed):
 
 ```bash
 SSH_SERVICES="production|password;db:db-server|"
 ```
 
-- `|` with empty credential uses `IdentityFile` from the config entry.
-- `[name:]config_host` — optional display name before the config Host name.
+- Empty credential (`|` at end) → uses `IdentityFile` from config
+- `[name:]config_host` → custom display name
 
-### Auto-import all config hosts
+### Auto-import all config hosts (`$config`)
 
-Set `$config` to import every `~/.ssh/config` Host that has both User and IdentityFile:
+Import every config host that has both **User** and **IdentityFile**:
 
 ```bash
 SSH_SERVICES="$config"
@@ -47,17 +80,17 @@ SSH_SERVICES="$config"
 SSH_SERVICES="$config;extra:root@other.host|password"
 ```
 
-Config changes take effect on the next tool call — no MCP restart needed.
+> Config changes take effect on the next tool call — **no MCP restart required**.
 
-### Optional environment variables
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SSH_TIMEOUT` | `15000` | Connection timeout in milliseconds |
+| `SSH_TIMEOUT` | `15000` | Connection timeout (ms) |
 | `SSH_LARGE_FILE_MB` | `10` | Files larger than this (MB) skip backup/trash |
-| `SSH_DEBUG` | — | Set to `true` to enable debug logging to stderr |
+| `SSH_DEBUG` | — | Set to `true` for debug logging to stderr |
 
-### MCP Client Config
+### MCP Client config
 
 ```json
 {
@@ -80,36 +113,50 @@ Config changes take effect on the next tool call — no MCP restart needed.
 | Tool | Arguments | Description |
 |------|-----------|-------------|
 | `list_servers` | — | List all configured servers with address and auth type |
-| `backup_status` | — | Show disk usage for backups and trash across all servers |
+| `backup_status` | — | Show disk usage for backups & trash across all servers |
 
 ### Command Execution
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `timeout` limits execution (seconds). `pty: true` allocates a TTY for apt/tmux/etc. `sudo_password` runs via `sudo -S` automatically (implicitly enables PTY). Not for file reading (use `read_file`) or editing (use `update_file`). |
+| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `timeout` limits execution (seconds). `pty: true` allocates a TTY. `sudo_password` runs via `sudo -S` (implicitly enables PTY). |
 
 ### File Transfer
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
 | `scp_upload` | `server`, `local_path`, `remote_path` | Upload a local file via SFTP |
-| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP. For quick reads, use `read_file` instead. |
+| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP |
 
 ### File Operations
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file content with optional line range (offset 1-indexed). |
-| `write_file` | `server`, `remote_path`, `content` | Create or overwrite a file with automatic rotational backup. |
-| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit an existing file: search/replace (all or first via `replace_all: false`), or line operations (replace, insert before/after, delete range). Backup created before modification. |
-| `sftp_rm` | `server`, `remote_path` | Remove file/directory with trash protection. Small files (≤10MB by default) move to `~/.mcp-ssh/trash/` instead of permanent deletion. |
-| `sftp_stat` | `server`, `remote_path` | Get file/directory metadata: type, size, permissions, modification time, uid/gid. |
+| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed) |
+| `write_file` | `server`, `remote_path`, `content` | Create/overwrite a file with automatic backup |
+| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
+| `sftp_rm` | `server`, `remote_path` | Remove file/dir with trash protection (≤10MB → trash) |
+| `sftp_stat` | `server`, `remote_path` | Get file/dir metadata: type, size, permissions, mtime, uid/gid |
 
 ## Backup & Trash
 
-- **write_file / update_file**: before modifying, the original is backed up with rotational retention (`.bak.1` ← `.bak.2` ← `.bak.3`) under `~/.mcp-ssh/backups/<server>/<path>`.
-- **sftp_rm**: files ≤10MB (configurable via `SSH_LARGE_FILE_MB`) move to `~/.mcp-ssh/trash/<server>/<path>.<timestamp>` instead of permanent deletion.
-- **Large file skip**: files exceeding the threshold skip backup/trash with a clear notification.
-- **Graceful degradation**: if backup or trash fails, operations proceed with a warning.
+```
+~/.mcp-ssh/
+├── backups/<server>/<path>.bak.1   ← newest (keeps last 3 versions)
+├── backups/<server>/<path>.bak.2
+├── backups/<server>/<path>.bak.3   ← oldest
+└── trash/<server>/<path>.<timestamp>
+```
+
+- **write_file / update_file** — automatic rotational backup (3 versions) before modification
+- **sftp_rm** — files ≤10MB (configurable) moved to trash instead of permanent deletion
+- **Large files** — skip backup/trash with explicit notification
+- **Graceful degradation** — if backup/trash fails, the operation still proceeds with a warning
 
 Use `backup_status` to check disk usage at any time.
+
+---
+
+<p align="center">
+  <a href="./README.zh-CN.md">📖 中文文档</a>
+</p>
