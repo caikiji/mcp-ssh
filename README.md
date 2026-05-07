@@ -27,6 +27,7 @@ Separate multiple servers with `;`.
 Optional settings:
 
 - **`SSH_TIMEOUT`** — connection timeout in milliseconds (default: `15000`). Increase for slow networks, decrease for quick failure detection.
+- **`SSH_LARGE_FILE_MB`** — files larger than this (MB) skip backup/trash (default: `10`).
 
 ### MCP Client Config
 
@@ -83,8 +84,8 @@ Add to your MCP client config (e.g. Claude Code, Codex, OpenCode):
 Files are automatically protected:
 
 - **write_file / update_file**: before modifying, the original file is backed up with rotational retention (`.bak.1` ← `.bak.2` ← `.bak.3`) under `~/.mcp-ssh/backups/<server>/<path>`.
-- **sftp_rm**: small files (<100MB) are moved to `~/.mcp-ssh/trash/<server>/<path>.<timestamp>` instead of permanent deletion.
-- **Large file skip**: files over 100MB skip backup/trash with a clear notification.
+- **sftp_rm**: small files (≤10MB by default, configurable via `SSH_LARGE_FILE_MB`) are moved to `~/.mcp-ssh/trash/<server>/<path>.<timestamp>` instead of permanent deletion.
+- **Large file skip**: files exceeding the threshold skip backup/trash with a clear notification.
 - **Graceful degradation**: if backup or trash fails, operations proceed with a warning.
 
 Use `backup_status` to check disk usage at any time.

@@ -9,8 +9,9 @@ import { Client } from "ssh2";
 import fs from "fs";
 import path from "path";
 
-const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
+const LARGE_FILE_THRESHOLD = (parseInt(process.env.SSH_LARGE_FILE_MB || "10", 10) || 10) * 1024 * 1024;
 const BACKUP_DIR_NAME = ".mcp-ssh";
+const LARGE_MB = LARGE_FILE_THRESHOLD / (1024 * 1024);
 const SSH_TIMEOUT = parseInt(process.env.SSH_TIMEOUT || "15000", 10);
 
 function parseServers() {
@@ -371,7 +372,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "write_file",
-      description: "Create a new file or overwrite an existing remote file with the given content. If the file already exists and is smaller than 100MB, the original is automatically backed up (rotational: keeps last 3 versions under ~/.mcp-ssh/backups/<server>/). For editing an existing file (search/replace or line operations), use update_file instead to avoid rewriting the entire file.",
+      description: "Create a new file or overwrite an existing remote file with the given content. If the file already exists and is smaller than 10MB (default, configurable via SSH_LARGE_FILE_MB), the original is automatically backed up (rotational: keeps last 3 versions under ~/.mcp-ssh/backups/<server>/). For editing an existing file (search/replace or line operations), use update_file instead to avoid rewriting the entire file.",
       inputSchema: {
         type: "object",
         properties: {
@@ -384,7 +385,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "sftp_rm",
-      description: "Remove a file or directory from a remote server. Files smaller than 100MB are moved to ~/.mcp-ssh/trash/<server>/<path>.<timestamp> instead of permanent deletion (can be restored manually). Files over 100MB and directories are permanently deleted with a warning. The trash mechanism requires write permission on the remote home directory.",
+      description: "Remove a file or directory from a remote server. Files smaller than 10MB (default, configurable via SSH_LARGE_FILE_MB) are moved to ~/.mcp-ssh/trash/<server>/<path>.<timestamp> instead of permanent deletion (can be restored manually). Larger files and directories are permanently deleted with a warning. The trash mechanism requires write permission on the remote home directory.",
       inputSchema: {
         type: "object",
         properties: {
@@ -630,7 +631,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const stat = await sftpStat(sftp, args.remote_path);
           if (stat.size > LARGE_FILE_THRESHOLD) {
-            notes.push(`File is large (${formatBytes(stat.size)} > 100MB) — skipped backup`);
+            notes.push(`File is large (${formatBytes(stat.size)} > ${LARGE_MB}MB) — skipped backup`);
           } else {
             const backupBase = path.join(homeDir, BACKUP_DIR_NAME, "backups", args.server, args.remote_path.replace(/^\//, ""));
             const ok = await doBackupRotation(sftp, args.remote_path, backupBase);
@@ -647,6 +648,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: msg }] };
     }
 
+    // ----- update_file -----
     if (name === "update_file") {
       const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
       const hasLine = args.line !== undefined && args.line !== null;
@@ -723,7 +725,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const stat = await sftpStat(sftp, args.remote_path);
           if (stat.size > LARGE_FILE_THRESHOLD) {
-            notes.push(`File is large (${formatBytes(stat.size)} > 100MB) — skipped backup`);
+            notes.push(`File is large (${formatBytes(stat.size)} > ${LARGE_MB}MB) — skipped backup`);
           } else {
             const backupBase = path.join(homeDir, BACKUP_DIR_NAME, "backups", args.server, args.remote_path.replace(/^\//, ""));
             const ok = await doBackupRotation(sftp, args.remote_path, backupBase);
@@ -742,6 +744,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: result.notes.join("; ") }] };
     }
 
+    // ----- sftp_rm -----
     if (name === "sftp_rm") {
       const result = await withHomeAndSftp(async (conn, sftp, homeDir) => {
         let notes = [];
@@ -756,7 +759,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const stat = await sftpStat(sftp, args.remote_path);
         if (stat.size > LARGE_FILE_THRESHOLD) {
-          notes.push(`File is large (${formatBytes(stat.size)} > 100MB) — no backup, deleting permanently`);
+          notes.push(`File is large (${formatBytes(stat.size)} > ${LARGE_MB}MB) — no backup, deleting permanently`);
           await sftpUnlink(sftp, args.remote_path);
           notes.push(`Deleted: ${args.remote_path}`);
           return notes;
