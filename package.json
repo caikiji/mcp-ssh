@@ -1,8 +1,13 @@
 {
   "name": "@caikiji/mcp-ssh",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for SSH remote execution, file transfer, and file editing with backup/trash management",
-  "keywords": ["mcp", "ssh", "sftp", "modelcontextprotocol"],
+  "keywords": [
+    "mcp",
+    "ssh",
+    "sftp",
+    "modelcontextprotocol"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
