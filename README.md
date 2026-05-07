@@ -132,8 +132,8 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed) |
-| `write_file` | `server`, `remote_path`, `content` | Create/overwrite a file with automatic backup |
+| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed). Returns friendly message if path is a directory. |
+| `write_file` | `server`, `remote_path`, `content`, `[mode]` | Create/overwrite (`mode: "write"`, default) or append (`mode: "append"`) to a file. Auto-backup before overwrite. |
 | `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
 | `sftp_rm` | `server`, `remote_path` | Remove file/dir with trash protection (≤10MB → trash) |
 | `sftp_stat` | `server`, `remote_path` | Get file/dir metadata: type, size, permissions, mtime, uid/gid |
