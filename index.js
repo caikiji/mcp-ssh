@@ -888,9 +888,10 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: result.notes.join("; ") }] };
   }
 
-    // ----- sftp_rm -----
-    if (name === "sftp_rm") {
-      const result = await withHomeAndSftp(async (conn, sftp, homeDir) => {
+  // ----- sftp_rm -----
+  if (name === "sftp_rm") {
+    const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
+      return await withHomeAndSftp(async (conn, sftp, homeDir) => {
         let notes = [];
         const isDir = await sftpStat(sftp, args.remote_path).then((s) => s.isDirectory()).catch(() => false);
 
@@ -920,11 +921,12 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         return notes;
       });
+    });
 
-      return { content: [{ type: "text", text: result.join("\n") }] };
-    }
+    return { content: [{ type: "text", text: result.join("\n") }] };
+  }
 
-    if (name === "sftp_stat") {
+  if (name === "sftp_stat") {
       const result = await withSftp(async (conn, sftp) => {
         const stat = await sftpStat(sftp, args.remote_path);
         const type = stat.isDirectory() ? "directory" : "file";
