@@ -1,6 +1,39 @@
-# @caikiji/mcp-ssh
+<p align="center">
+  <br/>
+  <h1 align="center">🔌 @caikiji/mcp-ssh</h1>
+  <p align="center">MCP SSH 服务器 — 远程执行、文件传输、文件编辑<br/>自动备份 &amp; 回收站 &amp; <code>~/.ssh/config</code> 集成</p>
+  <p align="center">
+    <a href="https://www.npmjs.com/package/@caikiji/mcp-ssh"><img src="https://img.shields.io/npm/v/@caikiji/mcp-ssh?style=flat-square&logo=npm" alt="npm version"/></a>
+    <a href="https://www.npmjs.com/package/@caikiji/mcp-ssh"><img src="https://img.shields.io/npm/dm/@caikiji/mcp-ssh?style=flat-square" alt="npm downloads"/></a>
+    <a href="https://github.com/caikiji/mcp-ssh"><img src="https://img.shields.io/github/stars/caikiji/mcp-ssh?style=flat-square&logo=github" alt="github stars"/></a>
+    <a href="./README.md"><img src="https://img.shields.io/badge/English%20docs-blue?style=flat-square" alt="english docs"/></a>
+    <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen?style=flat-square&logo=node.js" alt="node version"/>
+    <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license"/>
+  </p>
+  <p align="center">
+    <b><a href="#安装">安装</a></b>
+    ·
+    <b><a href="#配置">配置</a></b>
+    ·
+    <b><a href="#工具">工具</a></b>
+    ·
+    <b><a href="#备份--回收站">备份 &amp; 回收站</a></b>
+    ·
+    <b><a href="./README.md">English</a></b>
+  </p>
+  <br/>
+</p>
 
-MCP 服务器，支持 SSH 远程执行、文件传输、文件编辑，以及自动备份和回收站管理。集成 `~/.ssh/config`。
+## ✨ 特性
+
+- **🔐 SSH 凭据管理** — 单个环境变量注册多台服务器，支持密码和密钥
+- **📋 Config 集成** — 直接引用或自动导入 `~/.ssh/config`（`$config`）
+- **💻 远程执行** — 支持超时、虚拟终端（PTY）、sudo 密码自动输入
+- **📁 文件传输** — 通过 SFTP 上传/下载
+- **📝 文件编辑** — 读取、写入、搜索替换、行操作，修改前自动备份
+- **🗑️ 回收站保护** — 删除的文件移入 `~/.mcp-ssh/trash/`（阈值可配置）
+- **📊 备份统计** — 随时查看所有服务器的备份和回收站磁盘占用
+- **🐞 调试模式** — `SSH_DEBUG=true` 查看连接/执行/SFTP 诊断日志
 
 ## 安装
 
@@ -10,35 +43,36 @@ npm install -g @caikiji/mcp-ssh
 
 ## 配置
 
-### SSH_SERVICES
+### `SSH_SERVICES`
 
-通过 `SSH_SERVICES` 环境变量注册一个或多个服务器。多个服务器用 `;` 分隔。
-
-**格式：** `[名称:]用户@主机[:端口]|凭据`
+通过环境变量注册服务器，多个条目用 `;` 分隔。
 
 ```
 SSH_SERVICES="web:root@192.168.1.100:22|/path/to/id_rsa;db:deploy@db.internal|db_password"
 ```
 
-- **名称** — 可选，工具中显示的名字（默认使用主机名）。重名自动加数字后缀。
-- **端口** — 可选，默认 22。
-- **凭据** — 如果是一个已存在的文件路径，当作 SSH 私钥使用；否则当作密码。
+**格式：** `[名称:]用户@主机[:端口]|凭据`
 
-### 使用 ~/.ssh/config
+| 部分 | 说明 |
+|------|------|
+| `名称` | 可选，工具中显示的名称（默认用主机名）。重名自动加数字后缀。 |
+| `端口` | 可选，默认 `22`。 |
+| `凭据` | 文件路径 → SSH 私钥，否则当作密码。 |
 
-直接引用 `~/.ssh/config` 中定义的 Host 名称（不需要 `@`）。  
-HostName、User、Port、IdentityFile 自动读取。
+### 使用 `~/.ssh/config`
+
+直接引用 config 中定义的 Host（不需要 `@`）：
 
 ```bash
 SSH_SERVICES="production|password;db:db-server|"
 ```
 
-- `|` 后面不填凭据时，将使用 config 中的 IdentityFile。
-- `[名称:]config_host` — 可在 config Host 名前加自定义显示名。
+- `|` 后面不填凭据 → 使用 config 中的 IdentityFile
+- `[名称:]config_host` → 自定义显示名
 
-### 自动导入所有 config 主机
+### 自动导入所有 config 主机（`$config`）
 
-设置 `$config` 即可自动导入 `~/.ssh/config` 中所有同时包含 User 和 IdentityFile 的 Host：
+自动导入 `~/.ssh/config` 中所有同时包含 **User** 和 **IdentityFile** 的 Host：
 
 ```bash
 SSH_SERVICES="$config"
@@ -46,15 +80,15 @@ SSH_SERVICES="$config"
 SSH_SERVICES="$config;extra:root@other.host|password"
 ```
 
-修改 config 文件后，下一次工具调用自动生效，**无需重启 MCP**。
+> 修改 config 后下一次工具调用自动生效，**无需重启 MCP**。
 
-### 可选环境变量
+### 环境变量
 
 | 变量 | 默认值 | 说明 |
 |----------|---------|------|
 | `SSH_TIMEOUT` | `15000` | 连接超时（毫秒） |
 | `SSH_LARGE_FILE_MB` | `10` | 超过此大小（MB）的文件跳过备份/回收站 |
-| `SSH_DEBUG` | — | 设为 `true` 开启调试日志（输出到 stderr，仅终端可见） |
+| `SSH_DEBUG` | — | 设为 `true` 开启调试日志（输出到 stderr） |
 
 ### MCP 客户端配置
 
@@ -85,30 +119,44 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端（用于 apt/tmux 等）。`sudo_password` 自动通过 `sudo -S` 执行（隐式启用 PTY）。读文件请用 `read_file`，编辑文件请用 `update_file`。 |
+| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端。`sudo_password` 通过 `sudo -S` 执行（隐式启用 PTY）。 |
 
 ### 文件传输
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `scp_upload` | `server`, `local_path`, `remote_path` | 上传本地文件到远程服务器 |
-| `scp_download` | `server`, `remote_path`, `local_path` | 从远程服务器下载文件。快速查看文件内容建议用 `read_file`。 |
+| `scp_download` | `server`, `remote_path`, `local_path` | 从远程服务器下载文件 |
 
 ### 文件操作
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取远程文件内容，支持按行范围读取（offset 从 1 开始） |
-| `write_file` | `server`, `remote_path`, `content` | 创建或覆盖文件，自动轮转备份 |
-| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次，通过 `replace_all: false` 控制），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
-| `sftp_rm` | `server`, `remote_path` | 删除文件/目录，小文件（默认 ≤10MB）移入回收站而非永久删除 |
+| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取文件，支持按行范围（offset 从 1 开始） |
+| `write_file` | `server`, `remote_path`, `content` | 创建/覆盖文件，自动轮转备份 |
+| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
+| `sftp_rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
 | `sftp_stat` | `server`, `remote_path` | 查看文件/目录元数据：类型、大小、权限、修改时间、uid/gid |
 
 ## 备份 & 回收站
 
-- **write_file / update_file**：修改前自动轮转备份（`.bak.1` ← `.bak.2` ← `.bak.3`），存储于 `~/.mcp-ssh/backups/<服务器>/<路径>`
-- **sftp_rm**：≤10MB 的文件（可通过 `SSH_LARGE_FILE_MB` 配置）移入 `~/.mcp-ssh/trash/` 而非永久删除
-- **大文件跳过**：超过阈值的文件跳过备份/回收站，并明确提示
-- **优雅降级**：备份或回收站操作失败时，主操作仍继续执行并给出警告
+```
+~/.mcp-ssh/
+├── backups/<服务器>/<路径>.bak.1   ← 最新（保留 3 个版本）
+├── backups/<服务器>/<路径>.bak.2
+├── backups/<服务器>/<路径>.bak.3   ← 最旧
+└── trash/<服务器>/<路径>.<时间戳>
+```
 
-随时使用 `backup_status` 查看磁盘占用。
+- **write_file / update_file** — 修改前自动轮转备份（3 个版本）
+- **sftp_rm** — 阈值以内（默认 ≤10MB）的文件移入回收站而非永久删除
+- **大文件跳过** — 超过阈值的文件明确提示后跳过
+- **优雅降级** — 备份/回收站失败时，主操作仍继续执行并给出警告
+
+使用 `backup_status` 随时查看磁盘占用。
+
+---
+
+<p align="center">
+  <a href="./README.md">📖 English docs</a>
+</p>
