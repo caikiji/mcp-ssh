@@ -30,7 +30,7 @@ Optional settings:
 
 ### MCP Client Config
 
-Add to your MCP client config (e.g. Claude Desktop, Cursor):
+Add to your MCP client config (e.g. Claude Code, Codex, OpenCode):
 
 ```json
 {
