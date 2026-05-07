@@ -136,12 +136,22 @@ function connect(cfg, attempt = 1) {
   });
 }
 
-function execOnConn(conn, command) {
+function execOnConn(conn, command, timeoutSec) {
   return new Promise((resolve, reject) => {
+    let timer;
+    const cleanup = () => clearTimeout(timer);
+
+    if (timeoutSec && timeoutSec > 0) {
+      timer = setTimeout(() => {
+        conn.end();
+        reject(new Error(`Command timed out after ${timeoutSec}s: ${command.length > 100 ? command.substring(0, 100) + '...' : command}`));
+      }, timeoutSec * 1000);
+    }
+
     conn.exec(command, (err, stream) => {
-      if (err) { reject(err); return; }
+      if (err) { cleanup(); reject(err); return; }
       let stdout = "", stderr = "";
-      stream.on("close", (code, signal) => resolve({ stdout, stderr, code, signal }));
+      stream.on("close", (code, signal) => { cleanup(); resolve({ stdout, stderr, code, signal }); });
       stream.on("data", (data) => { stdout += data.toString(); });
       stream.stderr.on("data", (data) => { stderr += data.toString(); });
     });
@@ -308,12 +318,13 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "exec",
-      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file).",
+      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file). For long-running commands, set the timeout parameter to limit execution time.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name as shown by list_servers" },
           command: { type: "string", description: "Shell command to execute (e.g. 'ls -la /etc', 'systemctl status nginx', 'df -h')" },
+          timeout: { type: "number", description: "Maximum execution time in seconds. Omit for no timeout. Use for commands that might hang (e.g. 'apt upgrade', long scripts)." },
         },
         required: ["server", "command"],
       },
@@ -411,8 +422,9 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           server: { type: "string", description: "Server name" },
           remote_path: { type: "string", description: "Absolute path to the remote file to edit" },
-          search: { type: "string", description: "[Mode A] Text to find. All occurrences will be replaced with 'replace'." },
+          search: { type: "string", description: "[Mode A] Text to find. When replace_all is true (default), ALL occurrences are replaced. When false, only the first match is replaced." },
           replace: { type: "string", description: "[Mode A] Replacement text. Omit or set empty string to delete matched text." },
+          replace_all: { type: "boolean", description: "[Mode A] When true (default), replace all occurrences of search text. When false, replace only the first occurrence." },
           line: { type: "number", description: "[Mode B] Line number to act on (1-indexed). Combine with content/position/end_line." },
           end_line: { type: "number", description: "[Mode B] End line for range deletion (used with 'line', no 'content'). Deletes lines from 'line' to 'end_line' inclusive." },
           content: { type: "string", description: "[Mode B] New content for line replacement, or text to insert before/after a line." },
@@ -552,8 +564,12 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!args.command || typeof args.command !== "string") {
         return { isError: true, content: [{ type: "text", text: "Missing or invalid required argument: command must be a non-empty string." }] };
       }
+      if (args.timeout !== undefined && args.timeout !== null && (!Number.isFinite(args.timeout) || args.timeout <= 0)) {
+        return { isError: true, content: [{ type: "text", text: `'timeout' must be a positive number (seconds), got ${args.timeout}.` }] };
+      }
+      const timeout = args.timeout !== undefined && args.timeout !== null ? args.timeout : undefined;
       const result = await withConn(async (conn) => {
-        return await execOnConn(conn, args.command);
+        return await execOnConn(conn, args.command, timeout);
       });
       const parts = [];
       if (result.stdout) parts.push({ type: "text", text: result.stdout });
@@ -662,11 +678,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (count === 0) {
             return { notes: [`No matches for "${args.search}"`], skipped: true };
           }
-          modified = original.replaceAll(args.search, args.replace ?? "");
+          const replaceAll = args.replace_all !== false;
+          modified = replaceAll
+            ? original.replaceAll(args.search, args.replace ?? "")
+            : original.replace(args.search, args.replace ?? "");
           if (modified === original) {
             return { notes: ["Search text equals replacement — no change needed"], skipped: true };
           }
-          notes = [`Replaced ${count} occurrence(s) of "${args.search}"`];
+          notes = [`Replaced ${replaceAll ? count : 1} occurrence(s) of "${args.search}"`];
         } else {
           const fileLines = original.split("\n");
           const n = args.line;
