@@ -119,7 +119,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `timeout` limits execution (seconds). `pty: true` allocates a TTY. `sudo_password` runs via `sudo -S` (implicitly enables PTY). |
+| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `timeout` limits execution (seconds). `pty: true` allocates a TTY for apt/tmux/etc. `sudo_password` runs via `sudo -S <cmd>` (password sent via stdin, no PTY needed). |
 
 ### File Transfer
 

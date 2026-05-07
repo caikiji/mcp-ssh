@@ -119,7 +119,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端。`sudo_password` 通过 `sudo -S` 执行（隐式启用 PTY）。 |
+| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端。`sudo_password` 通过 `sudo -S` 执行（密码走 stdin 管道，无需 PTY）。 |
 
 ### 文件传输
 
