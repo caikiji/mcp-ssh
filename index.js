@@ -13,6 +13,8 @@ const LARGE_FILE_THRESHOLD = (parseInt(process.env.SSH_LARGE_FILE_MB || "10", 10
 const BACKUP_DIR_NAME = ".mcp-ssh";
 const LARGE_MB = LARGE_FILE_THRESHOLD / (1024 * 1024);
 const SSH_TIMEOUT = parseInt(process.env.SSH_TIMEOUT || "15000", 10);
+const DEBUG = process.env.SSH_DEBUG === "true" || process.env.SSH_DEBUG === "1";
+const debug = DEBUG ? (...args) => console.error("[mcp-ssh]", ...args) : () => {};
 
 function parseServers() {
   const raw = process.env.SSH_SERVICES || "";
@@ -125,9 +127,17 @@ function connect(cfg, attempt = 1) {
     let settled = false;
     const finish = (fn, val) => { if (!settled) { settled = true; fn(val); } };
 
-    conn.on("ready", () => finish(resolve, conn));
+    const authType = fs.existsSync(path.resolve(cfg.credential)) ? "key" : "password";
+    debug(`connecting to ${cfg.user}@${cfg.host}:${cfg.port} (${authType}), attempt ${attempt}`);
+
+    conn.on("ready", () => {
+      debug(`connected to ${cfg.host}:${cfg.port}`);
+      finish(resolve, conn);
+    });
     conn.on("error", (err) => {
+      debug(`connection error [${cfg.host}:${cfg.port}]: ${err.code || err.message}`);
       if (attempt < 2 && isRetryable(err)) {
+        debug(`retrying ${cfg.host}:${cfg.port} in 1s`);
         setTimeout(() => connect(cfg, attempt + 1).then(finish.bind(null, resolve), finish.bind(null, reject)), 1000);
       } else {
         finish(reject, classifyError(err, cfg));
@@ -140,19 +150,29 @@ function connect(cfg, attempt = 1) {
 function execOnConn(conn, command, timeoutSec) {
   return new Promise((resolve, reject) => {
     let timer;
+    let started = Date.now();
     const cleanup = () => clearTimeout(timer);
+
+    const trimmed = command.length > 200 ? command.substring(0, 200) + "..." : command;
+    debug(`exec: ${trimmed}` + (timeoutSec ? ` (timeout: ${timeoutSec}s)` : ""));
 
     if (timeoutSec && timeoutSec > 0) {
       timer = setTimeout(() => {
         conn.end();
+        debug(`exec TIMEOUT after ${timeoutSec}s: ${trimmed}`);
         reject(new Error(`Command timed out after ${timeoutSec}s: ${command.length > 100 ? command.substring(0, 100) + '...' : command}`));
       }, timeoutSec * 1000);
     }
 
     conn.exec(command, (err, stream) => {
-      if (err) { cleanup(); reject(err); return; }
+      if (err) { cleanup(); debug(`exec error: ${err.message}`); reject(err); return; }
       let stdout = "", stderr = "";
-      stream.on("close", (code, signal) => { cleanup(); resolve({ stdout, stderr, code, signal }); });
+      stream.on("close", (code, signal) => {
+        cleanup();
+        const elapsed = Date.now() - started;
+        debug(`exec done (${elapsed}ms, exit: ${code}): ${trimmed}`);
+        resolve({ stdout, stderr, code, signal });
+      });
       stream.on("data", (data) => { stdout += data.toString(); });
       stream.stderr.on("data", (data) => { stderr += data.toString(); });
     });
@@ -161,9 +181,11 @@ function execOnConn(conn, command, timeoutSec) {
 
 function sftpOpen(conn) {
   return new Promise((resolve, reject) => {
+    debug("opening SFTP channel");
     conn.sftp((err, sftp) => {
-      if (err) reject(err);
-      else resolve(sftp);
+      if (err) { debug(`SFTP open error: ${err.message}`); reject(err); return; }
+      debug("SFTP channel opened");
+      resolve(sftp);
     });
   });
 }
@@ -289,8 +311,10 @@ async function doBackupRotation(sftp, filePath, backupBase) {
     try { await sftpRename(sftp, backupBase + ".bak.1", backupBase + ".bak.2"); } catch {}
     const data = await sftpReadFile(sftp, filePath);
     await sftpWriteFile(sftp, backupBase + ".bak.1", data);
+    debug(`backup saved: ${backupBase}.bak.1`);
     return true;
   } catch (err) {
+    debug(`backup failed: ${err.message}`);
     return false;
   }
 }
@@ -299,8 +323,10 @@ async function doTrash(sftp, filePath, trashPath) {
   try {
     await ensureDirRecursive(sftp, path.dirname(trashPath));
     await sftpRename(sftp, filePath, trashPath);
+    debug(`trashed: ${filePath} → ${trashPath}`);
     return true;
   } catch (err) {
+    debug(`trash failed: ${err.message}`);
     return false;
   }
 }
@@ -560,6 +586,10 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
+  const callDesc = args?.remote_path || args?.command || "";
+  debug(`tool call: ${name} (server: ${args?.server || "—"}${callDesc ? ", " + callDesc.substring(0, 120) : ""})`);
+  const toolStart = Date.now();
+
   try {
     if (name === "exec") {
       if (!args.command || typeof args.command !== "string") {
@@ -800,6 +830,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     return { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
   } catch (err) {
+    debug(`tool error (${Date.now() - toolStart}ms): ${err.stack || err.message}`);
     return { isError: true, content: [{ type: "text", text: `Error: ${err.message}` }] };
   }
 });

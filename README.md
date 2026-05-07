@@ -28,6 +28,7 @@ Optional settings:
 
 - **`SSH_TIMEOUT`** — connection timeout in milliseconds (default: `15000`). Increase for slow networks, decrease for quick failure detection.
 - **`SSH_LARGE_FILE_MB`** — files larger than this (MB) skip backup/trash (default: `10`).
+- **`SSH_DEBUG`** — set to `true` to enable debug logging to stderr (tool calls, connection attempts, exec timing, SFTP operations, error stack traces).
 
 ### MCP Client Config
 
