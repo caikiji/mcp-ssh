@@ -135,7 +135,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | `write_file` | `server`, `remote_path`, `content`, `[mode]` | 覆盖写入（`mode: "write"`，默认）或追加（`mode: "append"`）。自动备份。 |
 | `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
 | `rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
-| `stat` | `server`, `remote_path` | 查看文件/目录元数据：类型、大小、权限、修改时间、uid/gid |
+| `ls` | `server`, `remote_path` | 列出目录条目或获取文件详情（名称、类型、大小、修改时间、权限） |
 
 ## 备份 & 回收站
 

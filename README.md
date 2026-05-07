@@ -135,7 +135,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | `write_file` | `server`, `remote_path`, `content`, `[mode]` | Create/overwrite (`mode: "write"`, default) or append (`mode: "append"`) to a file. Auto-backup before overwrite. |
 | `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
 | `rm` | `server`, `remote_path` | Remove file/dir with trash protection (≤10MB → trash) |
-| `stat` | `server`, `remote_path` | Get file/dir metadata: type, size, permissions, mtime, uid/gid |
+| `ls` | `server`, `remote_path` | List dir entries or get single file details (name, type, size, mtime, permissions) |
 
 ## Backup & Trash
 

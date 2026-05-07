@@ -559,8 +559,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "stat",
-      description: "Get file/dir metadata: type, size, permissions, mtime, uid/gid. To list dir contents, use exec ls.",
+      name: "ls",
+      description: "List dir or get file details. Dir: entries with type/size/mtime/name. File: same details for the path. Structured alternative to exec ls.",
       inputSchema: {
         type: "object",
         properties: {
@@ -921,20 +921,28 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: result.join("\n") }] };
   }
 
-  if (name === "stat") {
+  if (name === "ls") {
       const result = await withSftp(async (conn, sftp) => {
-        const stat = await sftpStat(sftp, args.remote_path);
-        const type = stat.isDirectory() ? "directory" : "file";
-        const perms = (stat.mode ? permString(stat.mode, stat.isDirectory()) : "?");
-        const mtime = new Date(stat.mtime * 1000).toISOString().replace("T", " ").substring(0, 19);
-        return [
-          `  ${sshCfg.host}:${args.remote_path}`,
-          `  type:       ${type}`,
-          `  size:       ${formatBytes(stat.size)} (${stat.size} bytes)`,
-          `  mode:       ${perms}`,
-          `  modified:   ${mtime}`,
-          `  uid/gid:    ${stat.uid}/${stat.gid}`,
-        ].join("\n");
+        const st = await sftpStat(sftp, args.remote_path);
+        if (st.isDirectory()) {
+          const entries = await sftpReaddir(sftp, args.remote_path);
+          const lines = [`${args.remote_path}/:`];
+          for (const e of entries) {
+            if (e.filename === "." || e.filename === "..") continue;
+            const isDir = (e.attrs.mode & 0o40000) !== 0;
+            const perms = permString(e.attrs.mode, isDir);
+            const m = e.attrs.mtime ? new Date(e.attrs.mtime * 1000) : null;
+            const mstr = m
+              ? `${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")} ${String(m.getHours()).padStart(2, "0")}:${String(m.getMinutes()).padStart(2, "0")}`
+              : "?";
+            lines.push(`${perms}  ${formatBytes(e.attrs.size || 0).padStart(7)}  ${mstr}  ${e.filename}`);
+          }
+          return lines.join("\n");
+        }
+        const perms = permString(st.mode, false);
+        const m = new Date(st.mtime * 1000);
+        const mstr = `${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")} ${String(m.getHours()).padStart(2, "0")}:${String(m.getMinutes()).padStart(2, "0")}`;
+        return `${perms}  ${formatBytes(st.size || 0).padStart(7)}  ${mstr}  ${args.remote_path}`;
       });
       return { content: [{ type: "text", text: result }] };
     }
