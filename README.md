@@ -24,9 +24,23 @@ For servers already defined in `~/.ssh/config`, use the config Host name instead
 SSH_SERVICES="production|password;db:db-server|"
 ```
 
-- Without `@` → treats the value as a `~/.ssh/config` Host name, reads HostName/User/Port/IdentityFile from config.
+- Without `@` → treats the value as a `~/.ssh/config` Host name, reads HostName/User/Port/IdentityFile.
 - `[name:]config_host` — optional display name before the config Host name.
-- **credential** — if omitted (trailing `|`), uses `IdentityFile` from the config entry.
+- **credential** — if omitted (`|` at end), uses `IdentityFile` from the config entry.
+
+### Auto-import all config hosts
+
+Set `$config` to automatically import all `~/.ssh/config` hosts that have both User and IdentityFile:
+
+```
+SSH_SERVICES="$config"
+```
+
+Can also be mixed with regular entries:
+
+```
+SSH_SERVICES="$config;extra:root@other.host|password"
+```
 
 - **name** — optional, defaults to host. Duplicate names get an auto-increment suffix.
 - **port** — optional, defaults to 22.

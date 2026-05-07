@@ -41,6 +41,31 @@ function parseServers() {
   }
 
   for (const part of parts) {
+    if (part === "$config") {
+      // Auto-import all Host entries from ~/.ssh/config
+      const cfg = getConfig();
+      for (const entry of cfg) {
+        if (entry.param !== "Host") continue;
+        const hosts = entry.value.split(/\s+/).filter((h) => !h.includes("*") && !h.includes("?"));
+        for (const configHost of hosts) {
+          const val = (key) => { const n = entry.config?.find((d) => d.param === key); return n ? n.value : undefined; };
+          const host = val("HostName");
+          if (!host) continue;
+          const user = val("User");
+          if (!user) continue;
+          const port = parseInt(val("Port") || "22", 10);
+          const identityFile = val("IdentityFile");
+          if (!identityFile) continue;
+          const credential = path.resolve(identityFile.replace(/^~/, LOCAL_HOME()));
+          let name = configHost;
+          if (servers[name]) { let i = 2; while (servers[`${name}-${i}`]) i++; name = `${name}-${i}`; }
+          debug(`auto-imported config host: ${name} (${user}@${host}:${port})`);
+          servers[name] = { user, host, port, credential };
+        }
+      }
+      continue;
+    }
+
     const pipeIdx = part.indexOf("|");
     if (pipeIdx === -1) throw new Error(`Missing | separator in entry: ${part}`);
 
