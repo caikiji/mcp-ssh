@@ -474,12 +474,12 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "list_servers",
-      description: "List configured servers with address and auth type. Use first to discover available servers.",
+      description: "List configured servers with address and auth type. Call first to discover available servers.",
       inputSchema: { type: "object", properties: {} },
     },
     {
       name: "exec",
-      description: "Run a shell command. NOT for reading files (use read) or editing (use update). Set sudo_password for sudo, pty for TTY.",
+      description: "Run a shell command. NOT for reading files (use read) or editing (use update). Set workdir to run in directory. Set sudo_password for sudo, pty for TTY.",
       inputSchema: {
         type: "object",
         properties: {
@@ -488,6 +488,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           timeout: { type: "number", description: "Max execution time (seconds). Use for commands that may hang." },
           pty: { type: "boolean", description: "Allocate TTY. Set true for apt, tmux, etc." },
           sudo_password: { type: "string", description: "Sudo password. Sends via stdin (no PTY needed). Combine with pty:true if command needs TTY." },
+          workdir: { type: "string", description: "Working directory. Prepends cd <workdir> && to the command." },
         },
         required: ["server", "command"],
       },
@@ -520,14 +521,16 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "read",
-      description: "Read a remote file as text. Supports offset (1-indexed) and limit for partial reads. NOT for binary files (use download).",
+      description: "Read a remote file. mode:text (default, full file), head/tail (via exec, zero transfer). offset/limit for line range in text mode. NOT for binary (use download).",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
           remote_path: { type: "string", description: "Absolute path to the remote file" },
-          offset: { type: "number", description: "Start line (1-indexed). Omit to read from beginning." },
-          limit: { type: "number", description: "Max lines to return. Omit to read all." },
+          offset: { type: "number", description: "Start line (1-indexed). Omit to read from beginning. text mode only." },
+          limit: { type: "number", description: "Max lines to return. Omit to read all. text mode only." },
+          mode: { type: "string", description: "text (default), head, or tail. head/tail use exec on server, efficient for large files." },
+          count: { type: "number", description: "Lines for head/tail mode (default 50)." },
         },
         required: ["server", "remote_path"],
       },
@@ -669,8 +672,13 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const execOpts = {};
       if (args.sudo_password) execOpts.sudoPassword = args.sudo_password;
       if (args.pty) execOpts.pty = true;
+      let finalCommand = args.command;
+      if (args.workdir && typeof args.workdir === "string" && args.workdir.trim()) {
+        const wd = args.workdir.trim();
+        if (wd !== "/") finalCommand = `cd ${wd.replace(/ /g, "\\ ")} && ${finalCommand}`;
+      }
       const result = await withConn(async (conn) => {
-        return await execOnConn(conn, args.command, timeout, execOpts);
+        return await execOnConn(conn, finalCommand, timeout, execOpts);
       });
       const parts = [];
       if (result.stdout) parts.push({ type: "text", text: result.stdout });
@@ -709,6 +717,25 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "read") {
+      const mode = args.mode || "text";
+      if (!["text", "head", "tail"].includes(mode)) {
+        return { isError: true, content: [{ type: "text", text: `'mode' must be "text", "head", or "tail", got "${mode}".` }] };
+      }
+
+      if (mode === "head" || mode === "tail") {
+        const count = (args.count !== undefined && args.count !== null) ? args.count : 50;
+        if (!Number.isFinite(count) || count < 1 || count > 10000) {
+          return { isError: true, content: [{ type: "text", text: `'count' must be between 1 and 10000, got ${count}.` }] };
+        }
+        const result = await withConn(async (conn) => {
+          return await execOnConn(conn, `${mode} -n ${count} ${args.remote_path.replace(/ /g, "\\ ")}`, 15);
+        });
+        const parts = [];
+        if (result.stdout) parts.push({ type: "text", text: result.stdout });
+        if (result.stderr) parts.push({ type: "text", text: `stderr:\n${result.stderr}` });
+        return { content: parts };
+      }
+
       let text = await withSftp(async (conn, sftp) => {
         const stat = await sftpStat(sftp, args.remote_path).catch(() => null);
         if (stat?.isDirectory?.()) {
