@@ -11,6 +11,7 @@ import path from "path";
 
 const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024;
 const BACKUP_DIR_NAME = ".mcp-ssh";
+const SSH_TIMEOUT = parseInt(process.env.SSH_TIMEOUT || "15000", 10);
 
 function parseServers() {
   const raw = process.env.SSH_SERVICES || "";
@@ -69,14 +70,43 @@ function parseServers() {
   return servers;
 }
 
-function connect(cfg) {
+function isRetryable(err) {
+  const c = err?.code || "";
+  return ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"].includes(c);
+}
+
+function classifyError(err, cfg) {
+  const c = err?.code || "";
+  const m = err?.message || String(err);
+  const addr = `${cfg.user}@${cfg.host}:${cfg.port}`;
+  if (c === "ECONNREFUSED" || m.includes("Connection refused"))
+    return new Error(`${addr} — connection refused. Is the SSH port open and reachable?`);
+  if (c === "ETIMEDOUT" || m.includes("timed out"))
+    return new Error(`${addr} — connection timed out after ${SSH_TIMEOUT}ms. Check network/firewall.`);
+  if (c === "ECONNRESET" || m.includes("Connection reset"))
+    return new Error(`${addr} — connection reset by remote host.`);
+  if (c === "EAI_AGAIN" || m.includes("getaddrinfo") || m.includes("ENOTFOUND"))
+    return new Error(`${addr} — host not found (DNS resolution failed).`);
+  if (m.includes("All configured authentication methods failed") || m.includes("Authentication failed"))
+    return new Error(`${addr} — authentication failed. Check your password or SSH key.`);
+  if (m.includes("No compatible signature") || m.includes("handshake"))
+    return new Error(`${addr} — SSH handshake failed. The server may use an incompatible SSH version or algorithm.`);
+  if (m.includes("Cannot read private key") || m.includes("bad permissions"))
+    return new Error(`${addr} — SSH key error. Check key file format and permissions (should be 600).`);
+  return new Error(`${addr} — ${m}`);
+}
+
+function connect(cfg, attempt = 1) {
   return new Promise((resolve, reject) => {
     const conn = new Client();
     const config = {
       host: cfg.host,
       port: cfg.port,
       username: cfg.user,
-      readyTimeout: 15000,
+      readyTimeout: SSH_TIMEOUT,
+      timeout: SSH_TIMEOUT,
+      keepaliveInterval: 10000,
+      keepaliveCountMax: 3,
     };
 
     const credPath = path.resolve(cfg.credential);
@@ -84,15 +114,24 @@ function connect(cfg) {
       try {
         config.privateKey = fs.readFileSync(credPath, "utf8");
       } catch {
-        reject(new Error(`Failed to read key file: ${credPath}`));
+        reject(new Error(`Failed to read key file: ${credPath}. Check file permissions.`));
         return;
       }
     } else {
       config.password = cfg.credential;
     }
 
-    conn.on("ready", () => resolve(conn));
-    conn.on("error", (err) => reject(err));
+    let settled = false;
+    const finish = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+
+    conn.on("ready", () => finish(resolve, conn));
+    conn.on("error", (err) => {
+      if (attempt < 2 && isRetryable(err)) {
+        setTimeout(() => connect(cfg, attempt + 1).then(finish.bind(null, resolve), finish.bind(null, reject)), 1000);
+      } else {
+        finish(reject, classifyError(err, cfg));
+      }
+    });
     conn.connect(config);
   });
 }
@@ -271,29 +310,29 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "list_servers",
-      description: "List all configured SSH servers with connection info and auth type",
+      description: "List all configured SSH servers with address and auth type (key or password). Use this first to discover which servers are available before using other tools.",
       inputSchema: { type: "object", properties: {} },
     },
     {
       name: "exec",
-      description: "Execute a shell command on a remote server and return the output",
+      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file).",
       inputSchema: {
         type: "object",
         properties: {
-          server: { type: "string", description: "Server name as configured in SSH_SERVICES" },
-          command: { type: "string", description: "Shell command to execute" },
+          server: { type: "string", description: "Server name as shown by list_servers" },
+          command: { type: "string", description: "Shell command to execute (e.g. 'ls -la /etc', 'systemctl status nginx', 'df -h')" },
         },
         required: ["server", "command"],
       },
     },
     {
       name: "scp_upload",
-      description: "Upload a local file to a remote server via SFTP",
+      description: "Upload a local file to a remote server via SFTP. The local file must exist on this machine. Use for: deploying configs, copying scripts, transferring assets. For downloading files from a URL directly to the remote server, use exec with curl/wget instead.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          local_path: { type: "string", description: "Absolute path to the local file" },
+          local_path: { type: "string", description: "Absolute path to the local file to upload" },
           remote_path: { type: "string", description: "Absolute destination path on the remote server" },
         },
         required: ["server", "local_path", "remote_path"],
@@ -301,12 +340,12 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "scp_download",
-      description: "Download a file from a remote server to the local machine via SFTP",
+      description: "Download a file from a remote server to the local machine via SFTP. For quickly reading a small file without creating a local copy, use read_file instead (it returns the content directly).",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path on the remote server" },
+          remote_path: { type: "string", description: "Absolute path of the file on the remote server to download" },
           local_path: { type: "string", description: "Absolute path where to save the file locally" },
         },
         required: ["server", "remote_path", "local_path"],
@@ -314,46 +353,46 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "read_file",
-      description: "Read the contents of a remote file and return as text. Supports optional line offset/limit for partial reads.",
+      description: "Read a remote file and return its content as text. Supports optional offset (starting line, 1-indexed) and limit (max lines) for partial reads of large files. Best for viewing config files, logs, source code, and text output. For binary files (images, archives), use scp_download instead.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path to the remote file" },
-          offset: { type: "number", description: "Starting line number (1-indexed). Defaults to 1." },
-          limit: { type: "number", description: "Maximum number of lines to return. Omit to read all lines from offset." },
+          remote_path: { type: "string", description: "Absolute path to the remote file to read" },
+          offset: { type: "number", description: "Starting line number (1-indexed). Omit to read from the beginning." },
+          limit: { type: "number", description: "Maximum number of lines to return. Omit to read all lines from offset to end." },
         },
         required: ["server", "remote_path"],
       },
     },
     {
       name: "write_file",
-      description: "Write content to a remote file. Creates automatic rotational backup (last 3 versions) for files under 100MB when the file already exists. Backups stored at ~/.mcp-ssh/backups/<server>/<path>.bak.N",
+      description: "Create a new file or overwrite an existing remote file with the given content. If the file already exists and is smaller than 100MB, the original is automatically backed up (rotational: keeps last 3 versions under ~/.mcp-ssh/backups/<server>/). For editing an existing file (search/replace or line operations), use update_file instead to avoid rewriting the entire file.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path on the remote server" },
-          content: { type: "string", description: "File content to write" },
+          remote_path: { type: "string", description: "Absolute path on the remote server to write to" },
+          content: { type: "string", description: "Full file content to write" },
         },
         required: ["server", "remote_path", "content"],
       },
     },
     {
       name: "sftp_list",
-      description: "List files and directories in a remote path",
+      description: "List files and directories in a remote directory. Shows file type (d = directory, - = file), human-readable size, and filename. For reading file contents, use read_file. For editing files, use update_file.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path of the remote directory" },
+          remote_path: { type: "string", description: "Absolute path of the remote directory to list" },
         },
         required: ["server", "remote_path"],
       },
     },
     {
       name: "sftp_mkdir",
-      description: "Create a directory on the remote server (works like mkdir -p)",
+      description: "Create a directory on the remote server. Works like mkdir -p — creates parent directories automatically if they don't exist. Fails silently if the directory already exists.",
       inputSchema: {
         type: "object",
         properties: {
@@ -365,7 +404,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "sftp_rm",
-      description: "Remove a file or directory on the remote server. Small files (<100MB) are moved to ~/.mcp-ssh/trash/<server>/<path>.<timestamp> instead of permanent deletion. Large files and directories are deleted directly with a warning.",
+      description: "Remove a file or directory from a remote server. Files smaller than 100MB are moved to ~/.mcp-ssh/trash/<server>/<path>.<timestamp> instead of permanent deletion (can be restored manually). Files over 100MB and directories are permanently deleted with a warning. The trash mechanism requires write permission on the remote home directory.",
       inputSchema: {
         type: "object",
         properties: {
@@ -377,7 +416,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "backup_status",
-      description: "Show disk usage statistics for backups (~/.mcp-ssh/backups) and trash (~/.mcp-ssh/trash) across all configured servers",
+      description: "Show disk usage statistics for backups (~/.mcp-ssh/backups/) and trash (~/.mcp-ssh/trash/) across all configured servers. Reports file count and total size for each directory per server. Use this to monitor how much disk space the protection mechanism is using.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -385,18 +424,18 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "update_file",
-      description: "Edit a remote file with search/replace or line-based operations. Backup is automatically created before modification.",
+      description: "Edit an existing remote file in-place. Two mutually exclusive modes: (A) search+replace — replaces ALL occurrences of 'search' text with 'replace' text; (B) line operations — replace a specific line, insert before/after a line, or delete line(s) by number. Automatically creates a rotational backup before modification. For creating NEW files, use write_file instead. For reading files, use read_file.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path to the remote file" },
-          search: { type: "string", description: "Text to search for (search/replace mode)" },
-          replace: { type: "string", description: "Replacement text (search/replace mode)" },
-          line: { type: "number", description: "Line number to act on (line mode, 1-indexed)" },
-          end_line: { type: "number", description: "End line number for range deletion" },
-          content: { type: "string", description: "New content for the line (line mode)" },
-          position: { type: "string", description: "Insert position: 'before' or 'after' the specified line" },
+          remote_path: { type: "string", description: "Absolute path to the remote file to edit" },
+          search: { type: "string", description: "[Mode A] Text to find. All occurrences will be replaced with 'replace'." },
+          replace: { type: "string", description: "[Mode A] Replacement text. Omit or set empty string to delete matched text." },
+          line: { type: "number", description: "[Mode B] Line number to act on (1-indexed). Combine with content/position/end_line." },
+          end_line: { type: "number", description: "[Mode B] End line for range deletion (used with 'line', no 'content'). Deletes lines from 'line' to 'end_line' inclusive." },
+          content: { type: "string", description: "[Mode B] New content for line replacement, or text to insert before/after a line." },
+          position: { type: "string", description: "[Mode B] Insert position: 'before' or 'after' the specified line. Defaults to replacing the line." },
         },
       },
     },
@@ -529,14 +568,17 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     if (name === "exec") {
+      if (!args.command || typeof args.command !== "string") {
+        return { isError: true, content: [{ type: "text", text: "Missing or invalid required argument: command must be a non-empty string." }] };
+      }
       const result = await withConn(async (conn) => {
         return await execOnConn(conn, args.command);
       });
       const parts = [];
       if (result.stdout) parts.push({ type: "text", text: result.stdout });
       if (result.stderr) parts.push({ type: "text", text: `stderr:\n${result.stderr}` });
-      if (result.code !== 0) parts.push({ type: "text", text: `exit code: ${result.code}` });
-      return { content: parts.length ? parts : [{ type: "text", text: "(no output)" }] };
+      parts.push({ type: "text", text: `exit code: ${result.code}` });
+      return { content: parts };
     }
 
     if (name === "scp_upload") {
@@ -630,10 +672,22 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
       const hasLine = args.line !== undefined && args.line !== null;
       if (!hasSearch && !hasLine) {
-        return { isError: true, content: [{ type: "text", text: "Provide 'search' (search/replace mode) or 'line' (line operation mode)" }] };
+        return { isError: true, content: [{ type: "text", text: "Provide 'search' (search/replace mode) or 'line' (line operation mode). See tool description for details." }] };
       }
       if (hasSearch && hasLine) {
-        return { isError: true, content: [{ type: "text", text: "Provide either 'search' or 'line', not both" }] };
+        return { isError: true, content: [{ type: "text", text: "Provide either 'search' or 'line', not both. These modes are mutually exclusive." }] };
+      }
+      if (hasLine && (!Number.isInteger(args.line) || args.line < 1)) {
+        return { isError: true, content: [{ type: "text", text: `'line' must be a positive integer, got ${args.line}.` }] };
+      }
+      if (args.end_line !== undefined && args.end_line !== null && (!Number.isInteger(args.end_line) || args.end_line < 1)) {
+        return { isError: true, content: [{ type: "text", text: `'end_line' must be a positive integer, got ${args.end_line}.` }] };
+      }
+      if (hasLine && args.end_line && args.line > args.end_line) {
+        return { isError: true, content: [{ type: "text", text: `'line' (${args.line}) must be <= 'end_line' (${args.end_line}).` }] };
+      }
+      if (args.position && !["before", "after"].includes(args.position)) {
+        return { isError: true, content: [{ type: "text", text: `'position' must be 'before' or 'after', got "${args.position}".` }] };
       }
 
       const result = await withHomeAndSftp(async (conn, sftp, homeDir) => {
