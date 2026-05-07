@@ -134,8 +134,8 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取文件，支持按行范围（offset 从 1 开始）。若路径是目录则给出友好提示。 |
 | `write_file` | `server`, `remote_path`, `content`, `[mode]` | 覆盖写入（`mode: "write"`，默认）或追加（`mode: "append"`）。自动备份。 |
 | `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
-| `sftp_rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
-| `sftp_stat` | `server`, `remote_path` | 查看文件/目录元数据：类型、大小、权限、修改时间、uid/gid |
+| `rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
+| `stat` | `server`, `remote_path` | 查看文件/目录元数据：类型、大小、权限、修改时间、uid/gid |
 
 ## 备份 & 回收站
 
