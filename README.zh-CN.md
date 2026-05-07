@@ -113,7 +113,6 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | 工具 | 参数 | 说明 |
 |------|------|------|
 | `list_servers` | — | 列出所有已配置的服务器地址和认证方式 |
-| `backup_status` | — | 查看所有服务器的备份和回收站磁盘占用 |
 
 ### 命令执行
 
@@ -148,12 +147,18 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 └── trash/<服务器>/<路径>.<时间戳>
 ```
 
-- **write_file / update_file** — 修改前自动轮转备份（3 个版本）
-- **sftp_rm** — 阈值以内（默认 ≤10MB）的文件移入回收站而非永久删除
-- **大文件跳过** — 超过阈值的文件明确提示后跳过
-- **优雅降级** — 备份/回收站失败时，主操作仍继续执行并给出警告
+## 备份 & 回收站
 
-使用 `backup_status` 随时查看磁盘占用。
+```
+~/.mcp-ssh/
+├── backups/<服务器>/<路径>.bak.1-3   ← 写入前自动轮转备份
+└── trash/<服务器>/<路径>.<时间戳>    ← 删除小文件（≤10MB）进回收站
+```
+
+通过 `exec` 查看实际用量：
+```
+exec server, "du -sh ~/.mcp-ssh"
+```
 
 ---
 

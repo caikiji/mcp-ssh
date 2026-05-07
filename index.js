@@ -505,7 +505,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "write_file",
-      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB). Set mode:append to add content to end. NOT for editing (use update_file).",
+      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB). Set mode:append to add content to end. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. Check usage via exec du. NOT for editing (use update_file).",
       inputSchema: {
         type: "object",
         properties: {
@@ -519,7 +519,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "sftp_rm",
-      description: "Remove a file or directory. Small files (≤10MB) go to trash (recoverable). Larger files and directories are permanently deleted.",
+      description: "Remove a file or directory. Small files (≤10MB) go to trash (recoverable): ~/.mcp-ssh/trash/<s>/<p>.<ts>. Larger files and directories are permanently deleted.",
       inputSchema: {
         type: "object",
         properties: {
@@ -542,16 +542,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "backup_status",
-      description: "Show backup & trash disk usage across all servers. Reports file count and total size.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-      },
-    },
-    {
       name: "update_file",
-      description: "Edit an existing file. Mode A: search+replace (replace_all:false for first-only). Mode B: line ops (replace, insert before/after, delete by number). Auto-backup. NOT for new files (use write_file).",
+      description: "Edit an existing file. Mode A: search+replace (replace_all:false for first-only). Mode B: line ops (replace, insert before/after, delete by number). Auto-backup. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. NOT for new files (use write_file).",
       inputSchema: {
         type: "object",
         properties: {
@@ -584,68 +576,6 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return {
       content: [{ type: "text", text: details.length ? details.join("\n") : "No servers configured. Set SSH_SERVICES environment variable." }],
     };
-  }
-
-  if (name === "backup_status") {
-    const serverNames = Object.keys(servers);
-    if (serverNames.length === 0) {
-      return { content: [{ type: "text", text: "No servers configured. Set SSH_SERVICES environment variable." }] };
-    }
-
-    const results = await Promise.all(serverNames.map(async (sName) => {
-      const cfg = servers[sName];
-      try {
-        const conn = await connect(cfg);
-        try {
-          const cmd = [
-            'STAT=~/.mcp-ssh',
-            'for dir in backups trash; do',
-            'p="$STAT/$dir"',
-            'if [ -d "$p" ]; then',
-            'files=$(find "$p" -type f 2>/dev/null | wc -l)',
-            'size=$(du -sb "$p" 2>/dev/null | cut -f1)',
-            'echo "${dir}_files=$files"',
-            'echo "${dir}_size=$size"',
-            'else',
-            'echo "${dir}_files=0"',
-            'echo "${dir}_size=0"',
-            'fi',
-            'done',
-          ].join("\n");
-
-          const result = await execOnConn(conn, cmd);
-          if (result.code !== 0) return { server: sName, error: result.stderr || "exec failed" };
-
-          const data = {};
-          for (const line of result.stdout.trim().split("\n")) {
-            const eq = line.indexOf("=");
-            if (eq > 0) data[line.substring(0, eq)] = line.substring(eq + 1);
-          }
-
-          return {
-            server: sName,
-            backups: { files: parseInt(data.backups_files) || 0, size: parseInt(data.backups_size) || 0 },
-            trash: { files: parseInt(data.trash_files) || 0, size: parseInt(data.trash_size) || 0 },
-          };
-        } finally { conn.end(); }
-      } catch (err) {
-        return { server: sName, error: err.message };
-      }
-    }));
-
-    const lines = [];
-    for (const r of results) {
-      if (r.error) {
-        lines.push(`${r.server}: connection failed — ${r.error}`);
-      } else {
-        const total = r.backups.size + r.trash.size;
-        lines.push(`${r.server}:`);
-        lines.push(`  backups  ${r.backups.files} file(s), ${formatBytes(r.backups.size)}`);
-        lines.push(`  trash    ${r.trash.files} file(s), ${formatBytes(r.trash.size)}`);
-        lines.push(`  total    ${formatBytes(total)}`);
-      }
-    }
-    return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 
   if (!args || !args.server) {

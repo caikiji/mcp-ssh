@@ -113,7 +113,6 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | Tool | Arguments | Description |
 |------|-----------|-------------|
 | `list_servers` | — | List all configured servers with address and auth type |
-| `backup_status` | — | Show disk usage for backups & trash across all servers |
 
 ### Command Execution
 
@@ -142,18 +141,14 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 ```
 ~/.mcp-ssh/
-├── backups/<server>/<path>.bak.1   ← newest (keeps last 3 versions)
-├── backups/<server>/<path>.bak.2
-├── backups/<server>/<path>.bak.3   ← oldest
-└── trash/<server>/<path>.<timestamp>
+├── backups/<server>/<path>.bak.1-3   ← auto-rotated before overwrite
+└── trash/<server>/<path>.<timestamp>  ← small files (≤10MB) on delete
 ```
 
-- **write_file / update_file** — automatic rotational backup (3 versions) before modification
-- **sftp_rm** — files ≤10MB (configurable) moved to trash instead of permanent deletion
-- **Large files** — skip backup/trash with explicit notification
-- **Graceful degradation** — if backup/trash fails, the operation still proceeds with a warning
-
-Use `backup_status` to check disk usage at any time.
+Check real usage via `exec`:
+```
+exec server, "du -sh ~/.mcp-ssh"
+```
 
 ---
 
