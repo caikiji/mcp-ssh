@@ -93,18 +93,22 @@ function parseServers() {
       name = name || configHost;
 
       if (!host) throw new Error(`HostName missing for config host "${configHost}"`);
+      if (!user) throw new Error(`User missing for config host "${configHost}". Specify User in ~/.ssh/config.`);
 
       // If no credential provided, use IdentityFile from config
-      if (!credential) {
-        const identityFile = val("IdentityFile");
-        if (identityFile) {
-          const resolved = identityFile.replace(/^~/, LOCAL_HOME());
-          const finalPath = path.resolve(resolved);
-          servers[name] = { user, host, port, credential: finalPath };
-          continue;
+        if (!credential) {
+          const identityFile = val("IdentityFile");
+          if (identityFile) {
+            const resolved = identityFile.replace(/^~/, LOCAL_HOME());
+            const finalPath = path.resolve(resolved);
+            name = name || configHost;
+            if (servers[name]) { let i = 2; while (servers[`${name}-${i}`]) i++; name = `${name}-${i}`; }
+            servers[name] = { user, host, port, credential: finalPath };
+            debug(`config host "${configHost}" (IdentityFile) → ${name}`);
+            continue;
+          }
+          throw new Error(`No credential and no IdentityFile for config host "${configHost}"`);
         }
-        throw new Error(`No credential and no IdentityFile for config host "${configHost}"`);
-      }
     } else {
       const beforeAt = connStr.substring(0, atIdx);
       const afterAt = connStr.substring(atIdx + 1);
@@ -183,6 +187,11 @@ function connect(cfg, attempt = 1) {
       keepaliveInterval: 10000,
       keepaliveCountMax: 3,
     };
+
+    if (!cfg.credential) {
+      reject(new Error(`No credential provided for ${cfg.user}@${cfg.host}. Set a password, key path, or configure IdentityFile in ~/.ssh/config.`));
+      return;
+    }
 
     const credPath = path.resolve(cfg.credential);
     if (fs.existsSync(credPath)) {
@@ -431,7 +440,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "exec",
-      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file). For commands requiring sudo, set sudo_password (enables PTY automatically). For other commands needing a TTY (apt, screen, etc.), set pty: true.",
+      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file). For commands requiring sudo, set sudo_password (sends password via stdin, no PTY needed). For commands needing a TTY (apt, screen, etc.), set pty: true.",
       inputSchema: {
         type: "object",
         properties: {
@@ -439,7 +448,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
           command: { type: "string", description: "Shell command to execute (e.g. 'ls -la /etc', 'systemctl status nginx', 'df -h')" },
           timeout: { type: "number", description: "Maximum execution time in seconds. Use for commands that might hang (e.g. 'apt upgrade', long scripts)." },
           pty: { type: "boolean", description: "Allocate a pseudo-terminal (PTY). Set to true for commands that require a TTY (sudo without password, apt, tmux, etc.)." },
-          sudo_password: { type: "string", description: "Password for sudo. When set, the command runs via 'sudo -S' and the password is sent automatically. Enables PTY implicitly." },
+          sudo_password: { type: "string", description: "Password for sudo. When set, the command runs via 'sudo -S' and the password is sent securely via stdin (no PTY echo). Combine with pty: true if the command itself needs a TTY." },
         },
         required: ["server", "command"],
       },
@@ -692,7 +701,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
       const execOpts = {};
       if (args.sudo_password) execOpts.sudoPassword = args.sudo_password;
-      if (args.pty || args.sudo_password) execOpts.pty = true;
+      if (args.pty) execOpts.pty = true;
       const result = await withConn(async (conn) => {
         return await execOnConn(conn, args.command, timeout, execOpts);
       });
