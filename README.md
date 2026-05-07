@@ -124,16 +124,16 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `scp_upload` | `server`, `local_path`, `remote_path` | Upload a local file via SFTP |
-| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP |
+| `upload` | `server`, `local_path`, `remote_path` | Upload a local file via SFTP |
+| `download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP |
 
 ### File Operations
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed). Returns friendly message if path is a directory. |
-| `write_file` | `server`, `remote_path`, `content`, `[mode]` | Create/overwrite (`mode: "write"`, default) or append (`mode: "append"`) to a file. Auto-backup before overwrite. |
-| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
+| `read` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed). Returns friendly message if path is a directory. |
+| `write` | `server`, `remote_path`, `content`, `[mode]` | Create/overwrite (`mode: "write"`, default) or append (`mode: "append"`) to a file. Auto-backup before overwrite. |
+| `update` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
 | `rm` | `server`, `remote_path` | Remove file/dir with trash protection (≤10MB → trash) |
 | `ls` | `server`, `remote_path` | List dir entries or get single file details (name, type, size, mtime, permissions) |
 

@@ -124,16 +124,16 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `scp_upload` | `server`, `local_path`, `remote_path` | 上传本地文件到远程服务器 |
-| `scp_download` | `server`, `remote_path`, `local_path` | 从远程服务器下载文件 |
+| `upload` | `server`, `local_path`, `remote_path` | 上传本地文件到远程服务器 |
+| `download` | `server`, `remote_path`, `local_path` | 从远程服务器下载文件 |
 
 ### 文件操作
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取文件，支持按行范围（offset 从 1 开始）。若路径是目录则给出友好提示。 |
-| `write_file` | `server`, `remote_path`, `content`, `[mode]` | 覆盖写入（`mode: "write"`，默认）或追加（`mode: "append"`）。自动备份。 |
-| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
+| `read` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取文件，支持按行范围（offset 从 1 开始）。若路径是目录则给出友好提示。 |
+| `write` | `server`, `remote_path`, `content`, `[mode]` | 覆盖写入（`mode: "write"`，默认）或追加（`mode: "append"`）。自动备份。 |
+| `update` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
 | `rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
 | `ls` | `server`, `remote_path` | 列出目录条目或获取文件详情（名称、类型、大小、修改时间、权限） |
 

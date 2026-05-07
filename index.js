@@ -479,7 +479,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "exec",
-      description: "Run a shell command. NOT for reading files (use read_file) or editing (use update_file). Set sudo_password for sudo, pty for TTY.",
+      description: "Run a shell command. NOT for reading files (use read) or editing (use update). Set sudo_password for sudo, pty for TTY.",
       inputSchema: {
         type: "object",
         properties: {
@@ -493,7 +493,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "scp_upload",
+      name: "upload",
       description: "Upload a local file. File must exist locally. To download URL to server directly, use exec + curl.",
       inputSchema: {
         type: "object",
@@ -506,8 +506,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "scp_download",
-      description: "Download a remote file to local machine. For quick reads without saving, use read_file.",
+      name: "download",
+      description: "Download a remote file to local machine. For quick reads without saving, use read.",
       inputSchema: {
         type: "object",
         properties: {
@@ -519,8 +519,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "read_file",
-      description: "Read a remote file as text. Supports offset (1-indexed) and limit for partial reads. NOT for binary files (use scp_download).",
+      name: "read",
+      description: "Read a remote file as text. Supports offset (1-indexed) and limit for partial reads. NOT for binary files (use download).",
       inputSchema: {
         type: "object",
         properties: {
@@ -533,8 +533,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "write_file",
-      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB). Set mode:append to add content to end. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. Check usage via exec du. NOT for editing (use update_file).",
+      name: "write",
+      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB). Set mode:append to add content to end. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. Check usage via exec du. NOT for editing (use update).",
       inputSchema: {
         type: "object",
         properties: {
@@ -571,8 +571,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "update_file",
-      description: "Edit an existing file. Mode A: search+replace (replace_all:false for first-only). Mode B: line ops (replace, insert before/after, delete by number). Auto-backup. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. NOT for new files (use write_file).",
+      name: "update",
+      description: "Edit an existing file. Mode A: search+replace (replace_all:false for first-only). Mode B: line ops (replace, insert before/after, delete by number). Auto-backup. Backups: ~/.mcp-ssh/backups/<s>/<p>.bak.N. NOT for new files (use write).",
       inputSchema: {
         type: "object",
         properties: {
@@ -679,7 +679,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: parts };
     }
 
-    if (name === "scp_upload") {
+    if (name === "upload") {
       const resolvedLocal = path.resolve(args.local_path);
       if (!fs.existsSync(resolvedLocal)) {
         return { isError: true, content: [{ type: "text", text: `Local file not found: ${resolvedLocal}` }] };
@@ -695,7 +695,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: `Uploaded ${resolvedLocal} \u2192 ${sshCfg.user}@${sshCfg.host}:${args.remote_path}` }] };
     }
 
-    if (name === "scp_download") {
+    if (name === "download") {
       const resolvedLocal = path.resolve(args.local_path);
       await withSftp(async (conn, sftp) => {
         await new Promise((resolve, reject) => {
@@ -708,7 +708,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: `Downloaded ${sshCfg.user}@${sshCfg.host}:${args.remote_path} \u2192 ${resolvedLocal}` }] };
     }
 
-    if (name === "read_file") {
+    if (name === "read") {
       let text = await withSftp(async (conn, sftp) => {
         const stat = await sftpStat(sftp, args.remote_path).catch(() => null);
         if (stat?.isDirectory?.()) {
@@ -730,7 +730,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: text }] };
     }
 
-    if (name === "write_file") {
+    if (name === "write") {
       if (args.mode && !["write", "append"].includes(args.mode)) {
         return { isError: true, content: [{ type: "text", text: `'mode' must be "write" or "append", got "${args.mode}".` }] };
       }
@@ -773,8 +773,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: msg }] };
   }
 
-  // ----- update_file -----
-  if (name === "update_file") {
+  // ----- update -----
+  if (name === "update") {
     const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
     const hasLine = args.line !== undefined && args.line !== null;
     if (!hasSearch && !hasLine) {
