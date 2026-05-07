@@ -118,7 +118,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端。`sudo_password` 通过 `sudo -S` 执行（密码走 stdin 管道，无需 PTY）。 |
+| `exec` | `server`, `command`, `[workdir]`, `[timeout]`, `[pty]`, `[sudo_password]` | 执行任意 shell 命令。`workdir` 前置 `cd <path> &&`。`timeout` 限制执行时间（秒）。`pty: true` 分配虚拟终端。`sudo_password` 通过 `sudo -S` 执行（密码走 stdin 管道，无需 PTY）。 |
 
 ### 文件传输
 
@@ -131,7 +131,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | 工具 | 参数 | 说明 |
 |------|------|------|
-| `read` | `server`, `remote_path`, `[offset]`, `[limit]` | 读取文件，支持按行范围（offset 从 1 开始）。若路径是目录则给出友好提示。 |
+| `read` | `server`, `remote_path`, `[offset]`, `[limit]`, `[mode]`, `[count]` | 读取文件。`mode:text`（默认）、`head`、`tail`（走 exec，零传输）。`count` 用于 head/tail（默认 50）。offset 从 1 开始，仅 text 模式。 |
 | `write` | `server`, `remote_path`, `content`, `[mode]` | 覆盖写入（`mode: "write"`，默认）或追加（`mode: "append"`）。自动备份。 |
 | `update` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
 | `rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |

@@ -118,7 +118,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `timeout` limits execution (seconds). `pty: true` allocates a TTY for apt/tmux/etc. `sudo_password` runs via `sudo -S <cmd>` (password sent via stdin, no PTY needed). |
+| `exec` | `server`, `command`, `[workdir]`, `[timeout]`, `[pty]`, `[sudo_password]` | Run any shell command. `workdir` prepends `cd <path> &&`. `timeout` limits execution (seconds). `pty: true` allocates a TTY for apt/tmux/etc. `sudo_password` runs via `sudo -S <cmd>` (password sent via stdin, no PTY needed). |
 
 ### File Transfer
 
@@ -131,7 +131,7 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `read` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file with optional line range (offset 1-indexed). Returns friendly message if path is a directory. |
+| `read` | `server`, `remote_path`, `[offset]`, `[limit]`, `[mode]`, `[count]` | Read file. `mode:text` (default), `head`, `tail` (via exec, zero transfer). `count` for head/tail (default 50). offset 1-indexed, for text mode. |
 | `write` | `server`, `remote_path`, `content`, `[mode]` | Create/overwrite (`mode: "write"`, default) or append (`mode: "append"`) to a file. Auto-backup before overwrite. |
 | `update` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit existing file: search/replace (all or first), or line operations (replace, insert before/after, delete range). Backup before modification. |
 | `rm` | `server`, `remote_path` | Remove file/dir with trash protection (≤10MB → trash) |
