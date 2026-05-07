@@ -409,6 +409,17 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)}GB`;
 }
 
+async function classifyPathError(sftp, targetPath) {
+  // Distinguish "parent dir missing" from "file itself missing"
+  const parent = path.dirname(targetPath);
+  try {
+    await sftpStat(sftp, parent);
+    return `No such file or directory: "${targetPath}"`;
+  } catch {
+    return `Parent directory does not exist: "${parent}" (while accessing "${targetPath}")`;
+  }
+}
+
 function permString(mode, isDir) {
   const t = isDir ? 'd' : '-';
   const rwx = (n) => ((n & 4) ? 'r' : '-') + ((n & 2) ? 'w' : '-') + ((n & 1) ? 'x' : '-');
@@ -536,7 +547,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "sftp_rm",
+      name: "rm",
       description: "Remove a file or directory. Small files (≤10MB) go to trash (recoverable): ~/.mcp-ssh/trash/<s>/<p>.<ts>. Larger files and directories are permanently deleted.",
       inputSchema: {
         type: "object",
@@ -548,7 +559,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "sftp_stat",
+      name: "stat",
       description: "Get file/dir metadata: type, size, permissions, mtime, uid/gid. To list dir contents, use exec ls.",
       inputSchema: {
         type: "object",
@@ -787,7 +798,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
       return await withHomeAndSftp(async (conn, sftp, homeDir) => {
-        const original = (await sftpReadFile(sftp, args.remote_path)).toString("utf8");
+        let original;
+        try { original = (await sftpReadFile(sftp, args.remote_path)).toString("utf8"); }
+        catch (err) {
+          if ((err?.message || "").match(/no such file|not found/i)) {
+            throw new Error(await classifyPathError(sftp, args.remote_path));
+          }
+          throw err;
+        }
         let notes, modified;
 
         if (hasSearch) {
@@ -863,8 +881,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: result.notes.join("; ") }] };
   }
 
-  // ----- sftp_rm -----
-  if (name === "sftp_rm") {
+  // ----- rm / sftp_rm -----
+  if (name === "rm" || name === "sftp_rm") {
     const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
       return await withHomeAndSftp(async (conn, sftp, homeDir) => {
         let notes = [];
@@ -877,7 +895,9 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           return notes;
         }
 
-        const stat = await sftpStat(sftp, args.remote_path);
+        let stat;
+        try { stat = await sftpStat(sftp, args.remote_path); }
+        catch (err) { return [await classifyPathError(sftp, args.remote_path)]; }
         if (stat.size > LARGE_FILE_THRESHOLD) {
           notes.push(`File is large (${formatBytes(stat.size)} > ${LARGE_MB}MB) — no backup, deleting permanently`);
           await sftpUnlink(sftp, args.remote_path);
@@ -901,7 +921,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: result.join("\n") }] };
   }
 
-  if (name === "sftp_stat") {
+  if (name === "stat" || name === "sftp_stat") {
       const result = await withSftp(async (conn, sftp) => {
         const stat = await sftpStat(sftp, args.remote_path);
         const type = stat.isDirectory() ? "directory" : "file";
