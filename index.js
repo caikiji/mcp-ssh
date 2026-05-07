@@ -505,13 +505,14 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "write_file",
-      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB, check backup_status for details). NOT for editing existing files (use update_file).",
+      description: "Create or overwrite a file. Auto-backup before overwrite (≤10MB). Set mode:append to add content to end. NOT for editing (use update_file).",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name" },
           remote_path: { type: "string", description: "Absolute path to write to" },
           content: { type: "string", description: "Full file content" },
+          mode: { type: "string", description: "write (default) or append. append adds content to end of file." },
         },
         required: ["server", "remote_path", "content"],
       },
@@ -749,11 +750,16 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "read_file") {
-      const data = await withSftp(async (conn, sftp) => {
-        return await sftpReadFile(sftp, args.remote_path);
+      let text = await withSftp(async (conn, sftp) => {
+        const stat = await sftpStat(sftp, args.remote_path).catch(() => null);
+        if (stat?.isDirectory?.()) {
+          return `IS_DIRECTORY: ${args.remote_path}\nTo list contents use: exec(server: "${args.server}", command: "ls ${args.remote_path.replace(/ /g, '\\ ')}")`;
+        }
+        const data = await sftpReadFile(sftp, args.remote_path);
+        return data.toString("utf8");
       });
-      let text = data.toString("utf8");
-      if (args.offset !== undefined && args.offset !== null) {
+      if (text.startsWith("IS_DIRECTORY:")) text = text.slice(14);
+      else if (args.offset !== undefined && args.offset !== null) {
         const lines = text.split("\n");
         const start = Math.max(0, args.offset - 1);
         const end = args.limit ? start + args.limit : undefined;
@@ -766,9 +772,25 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "write_file") {
+      if (args.mode && !["write", "append"].includes(args.mode)) {
+        return { isError: true, content: [{ type: "text", text: `'mode' must be "write" or "append", got "${args.mode}".` }] };
+      }
       const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
         return await withHomeAndSftp(async (conn, sftp, homeDir) => {
         let notes = [];
+        let content = args.content;
+
+        if (args.mode === "append") {
+          try {
+            const existing = await sftpReadFile(sftp, args.remote_path);
+            content = existing.toString("utf8") + args.content;
+            notes.push("Appended to file");
+          } catch {
+            // File does not exist, treat as write
+            notes.push("File did not exist, created new");
+          }
+        }
+
         try {
           const stat = await sftpStat(sftp, args.remote_path);
           if (stat.size > LARGE_FILE_THRESHOLD) {
@@ -782,7 +804,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         } catch {
           // File does not exist, no backup needed
         }
-        await sftpWriteFile(sftp, args.remote_path, args.content);
+        await sftpWriteFile(sftp, args.remote_path, content);
         return notes;
       });
     });
