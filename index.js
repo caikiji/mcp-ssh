@@ -670,8 +670,12 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else {
           const fileLines = original.split("\n");
           const n = args.line;
-          if (n < 1 || n > fileLines.length) {
-            return { notes: [`Line ${n} is out of range (file has ${fileLines.length} lines)`], skipped: true };
+          const maxLine = args.position === "before" ? fileLines.length + 1 : fileLines.length;
+          if (n < 1 || n > maxLine) {
+            const hint = args.position === "before"
+              ? ` (for insert before, line can be up to ${fileLines.length + 1} to append to end)`
+              : "";
+            return { notes: [`Line ${n} is out of range (file has ${fileLines.length} lines)${hint}`], skipped: true };
           }
           const hasContent = args.content !== undefined && args.content !== null;
           const position = args.position;
