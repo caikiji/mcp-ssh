@@ -259,13 +259,6 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function formatEntry(e) {
-  if (!e || !e.attrs) return `  ?         ${e.filename}`;
-  const isDir = e.attrs.isDirectory ? e.attrs.isDirectory() : !!(e.attrs.mode & 0o40000);
-  const perm = isDir ? "d" : "-";
-  const size = e.attrs.size || 0;
-  return `${perm} ${formatBytes(size).padStart(8)} ${e.filename}`;
-}
 
 function timestamp() {
   const d = new Date();
@@ -379,30 +372,6 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "sftp_list",
-      description: "List files and directories in a remote directory. Shows file type (d = directory, - = file), human-readable size, and filename. For reading file contents, use read_file. For editing files, use update_file.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path of the remote directory to list" },
-        },
-        required: ["server", "remote_path"],
-      },
-    },
-    {
-      name: "sftp_mkdir",
-      description: "Create a directory on the remote server. Works like mkdir -p — creates parent directories automatically if they don't exist. Fails silently if the directory already exists.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          server: { type: "string", description: "Server name" },
-          remote_path: { type: "string", description: "Absolute path of the directory to create" },
-        },
-        required: ["server", "remote_path"],
-      },
-    },
-    {
       name: "sftp_rm",
       description: "Remove a file or directory from a remote server. Files smaller than 100MB are moved to ~/.mcp-ssh/trash/<server>/<path>.<timestamp> instead of permanent deletion (can be restored manually). Files over 100MB and directories are permanently deleted with a warning. The trash mechanism requires write permission on the remote home directory.",
       inputSchema: {
@@ -410,6 +379,18 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           server: { type: "string", description: "Server name" },
           remote_path: { type: "string", description: "Absolute path of the file or directory to remove" },
+        },
+        required: ["server", "remote_path"],
+      },
+    },
+    {
+      name: "sftp_stat",
+      description: "Get metadata for a remote file or directory: type (file/dir), size, permissions, modification time, uid/gid. Use this to check if a path exists, compare file sizes, or verify permissions before reading or editing. For listing directory contents, use exec with ls instead.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          server: { type: "string", description: "Server name" },
+          remote_path: { type: "string", description: "Absolute path of the file or directory to stat" },
         },
         required: ["server", "remote_path"],
       },
@@ -650,24 +631,6 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: msg }] };
     }
 
-    if (name === "sftp_list") {
-      const entries = await withSftp(async (conn, sftp) => {
-        return await sftpReaddir(sftp, args.remote_path);
-      });
-      const lines = entries
-        .filter((e) => e.filename !== "." && e.filename !== "..")
-        .map(formatEntry);
-      const header = `${sshCfg.user}@${sshCfg.host}:${args.remote_path}`;
-      return { content: [{ type: "text", text: header + "\n" + (lines.length ? lines.join("\n") : "(empty directory)") }] };
-    }
-
-    if (name === "sftp_mkdir") {
-      await withSftp(async (conn, sftp) => {
-        await ensureDirRecursive(sftp, args.remote_path);
-      });
-      return { content: [{ type: "text", text: `Created directory ${args.remote_path}` }] };
-    }
-
     if (name === "update_file") {
       const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
       const hasLine = args.line !== undefined && args.line !== null;
@@ -789,6 +752,24 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       return { content: [{ type: "text", text: result.join("\n") }] };
+    }
+
+    if (name === "sftp_stat") {
+      const result = await withSftp(async (conn, sftp) => {
+        const stat = await sftpStat(sftp, args.remote_path);
+        const type = stat.isDirectory() ? "directory" : "file";
+        const perms = (stat.mode ? (stat.mode & 0o777).toString(8) : "?") + (stat.isDirectory() ? " (drwxr-xr-x)" : "");
+        const mtime = new Date(stat.mtime * 1000).toISOString().replace("T", " ").substring(0, 19);
+        return [
+          `  ${sshCfg.host}:${args.remote_path}`,
+          `  type:       ${type}`,
+          `  size:       ${formatBytes(stat.size)} (${stat.size} bytes)`,
+          `  mode:       ${perms}`,
+          `  modified:   ${mtime}`,
+          `  uid/gid:    ${stat.uid}/${stat.gid}`,
+        ].join("\n");
+      });
+      return { content: [{ type: "text", text: result }] };
     }
 
     return { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
