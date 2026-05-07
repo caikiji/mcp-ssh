@@ -18,10 +18,19 @@ const DEBUG = process.env.SSH_DEBUG === "true" || process.env.SSH_DEBUG === "1";
 const debug = DEBUG ? (...args) => console.error("[mcp-ssh]", ...args) : () => {};
 const LOCAL_HOME = () => process.env.HOME || "/root";
 const fileLocks = new Map();
+const lockGen = new Map();
 async function withFileLock(key, fn) {
   const prev = fileLocks.get(key) || Promise.resolve();
+  const gen = (lockGen.get(key) || 0) + 1;
+  lockGen.set(key, gen);
   const next = prev.then(fn, fn);
   fileLocks.set(key, next.then(() => {}, () => {}));
+  next.finally(() => {
+    if (lockGen.get(key) === gen) {
+      fileLocks.delete(key);
+      lockGen.delete(key);
+    }
+  });
   return next;
 }
 
@@ -200,7 +209,7 @@ function connect(cfg, attempt = 1) {
       return;
     }
 
-    const credPath = path.resolve(cfg.credential);
+    const credPath = path.resolve(cfg.credential.replace(/^~/, LOCAL_HOME()));
     if (fs.existsSync(credPath)) {
       try {
         config.privateKey = fs.readFileSync(credPath, "utf8");
@@ -295,7 +304,7 @@ function sftpOpen(conn) {
 function sftpMkdir(sftp, dirPath) {
   return new Promise((resolve, reject) => {
     sftp.mkdir(dirPath, (err) => {
-      if (err && err.code === 4) resolve();
+      if (err && err.code === 12) resolve();
       else if (err) reject(err);
       else resolve();
     });
@@ -395,6 +404,12 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)}GB`;
+}
+
+function permString(mode, isDir) {
+  const t = isDir ? 'd' : '-';
+  const rwx = (n) => ((n & 4) ? 'r' : '-') + ((n & 2) ? 'w' : '-') + ((n & 1) ? 'x' : '-');
+  return t + rwx((mode >> 6) & 7) + rwx((mode >> 3) & 7) + rwx(mode & 7);
 }
 
 
@@ -784,7 +799,9 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
           notes = [`Replaced ${replaceAll ? count : 1} occurrence(s) of "${args.search}"`];
         } else {
-          const fileLines = original.split("\n");
+          const hasTrailingNL = original.endsWith("\n");
+          const src = hasTrailingNL ? original.slice(0, -1) : original;
+          const fileLines = src.split("\n");
           const n = args.line;
           const maxLine = args.position === "before" ? fileLines.length + 1 : fileLines.length;
           if (n < 1 || n > maxLine) {
@@ -815,6 +832,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
             return { notes: ["Invalid line operation parameters"], skipped: true };
           }
           modified = fileLines.join("\n");
+          if (hasTrailingNL) modified += "\n";
         }
 
         try {
@@ -882,7 +900,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const result = await withSftp(async (conn, sftp) => {
         const stat = await sftpStat(sftp, args.remote_path);
         const type = stat.isDirectory() ? "directory" : "file";
-        const perms = (stat.mode ? (stat.mode & 0o777).toString(8) : "?") + (stat.isDirectory() ? " (drwxr-xr-x)" : "");
+        const perms = (stat.mode ? permString(stat.mode, stat.isDirectory()) : "?");
         const mtime = new Date(stat.mtime * 1000).toISOString().replace("T", " ").substring(0, 19);
         return [
           `  ${sshCfg.host}:${args.remote_path}`,
