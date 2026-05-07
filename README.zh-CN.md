@@ -32,7 +32,6 @@
 - **📁 文件传输** — 通过 SFTP 上传/下载
 - **📝 文件编辑** — 读取、写入、搜索替换、行操作，修改前自动备份
 - **🗑️ 回收站保护** — 删除的文件移入 `~/.mcp-ssh/trash/`（阈值可配置）
-- **📊 备份统计** — 随时查看所有服务器的备份和回收站磁盘占用
 - **🐞 调试模式** — `SSH_DEBUG=true` 查看连接/执行/SFTP 诊断日志
 
 ## 安装
@@ -136,16 +135,6 @@ SSH_SERVICES="$config;extra:root@other.host|password"
 | `update` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **或** `line`+`content`+`[position]` | 编辑已有文件：搜索替换（全部或首次），或行操作（替换、插入前后、删除范围）。修改前自动备份。 |
 | `rm` | `server`, `remote_path` | 删除文件/目录。小文件（默认 ≤10MB）移入回收站而非永久删除 |
 | `ls` | `server`, `remote_path` | 列出目录条目或获取文件详情（名称、类型、大小、修改时间、权限） |
-
-## 备份 & 回收站
-
-```
-~/.mcp-ssh/
-├── backups/<服务器>/<路径>.bak.1   ← 最新（保留 3 个版本）
-├── backups/<服务器>/<路径>.bak.2
-├── backups/<服务器>/<路径>.bak.3   ← 最旧
-└── trash/<服务器>/<路径>.<时间戳>
-```
 
 ## 备份 & 回收站
 

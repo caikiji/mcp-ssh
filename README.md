@@ -32,7 +32,6 @@
 - **📁 File transfer** — upload/download via SFTP
 - **📝 File editing** — read, write, search/replace, line operations with automatic backup
 - **🗑️ Trash protection** — deleted files go to `~/.mcp-ssh/trash/` (configurable threshold)
-- **📊 Backup stats** — monitor disk usage of backups and trash across all servers
 - **🐞 Debug mode** — `SSH_DEBUG=true` for connection/exec/SFTP diagnostics
 
 ## Installation
