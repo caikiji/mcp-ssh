@@ -232,8 +232,8 @@ function connect(cfg, attempt = 1) {
       finish(resolve, conn);
     });
     conn.on("error", (err) => {
-      debug(`connection error [${cfg.host}:${cfg.port}]: ${err.code || err.message}`);
-      if (attempt < 2 && isRetryable(err)) {
+      debug(`connection error [${cfg.host}:${cfg.port}]: ${err.code || err.message}${isRetryable(err) ? "" : " (not transient, retrying anyway)"}`);
+      if (attempt < 2) {
         debug(`retrying ${cfg.host}:${cfg.port} in 1s`);
         setTimeout(() => connect(cfg, attempt + 1).then(finish.bind(null, resolve), finish.bind(null, reject)), 1000);
       } else {
@@ -259,7 +259,7 @@ function execOnConn(conn, command, timeoutSec, opts = {}) {
 
     if (timeoutSec && timeoutSec > 0) {
       timer = setTimeout(() => {
-        conn.end();
+        try { conn.end(); } catch (e) { debug(`conn.end error on timeout: ${e.message}`); }
         debug(`exec TIMEOUT after ${timeoutSec}s: ${trimmed}`);
         reject(new Error(`Command timed out after ${timeoutSec}s: ${command.length > 100 ? command.substring(0, 100) + '...' : command}`));
       }, timeoutSec * 1000);
@@ -927,6 +927,13 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
+  process.on("uncaughtException", (err) => {
+    console.error("[mcp-ssh] UNCAUGHT:", err);
+  });
+  process.on("unhandledRejection", (err) => {
+    console.error("[mcp-ssh] UNHANDLED REJECTION:", err?.stack || err);
+  });
+
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
 }
