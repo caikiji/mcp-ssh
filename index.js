@@ -17,6 +17,13 @@ const SSH_TIMEOUT = parseInt(process.env.SSH_TIMEOUT || "15000", 10);
 const DEBUG = process.env.SSH_DEBUG === "true" || process.env.SSH_DEBUG === "1";
 const debug = DEBUG ? (...args) => console.error("[mcp-ssh]", ...args) : () => {};
 const LOCAL_HOME = () => process.env.HOME || "/root";
+const fileLocks = new Map();
+async function withFileLock(key, fn) {
+  const prev = fileLocks.get(key) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  fileLocks.set(key, next.then(() => {}, () => {}));
+  return next;
+}
 
 function parseServers() {
   const raw = process.env.SSH_SERVICES || "";
@@ -368,16 +375,18 @@ async function ensureDirRecursive(sftp, dirPath) {
 }
 
 async function removeRecursive(sftp, targetPath) {
-  const stat = await sftpStat(sftp, targetPath);
+  const cleanPath = targetPath.replace(/\/+$/, "");
+  const stat = await sftpStat(sftp, cleanPath);
   if (stat.isDirectory()) {
-    const entries = await sftpReaddir(sftp, targetPath);
+    let entries;
+    try { entries = await sftpReaddir(sftp, cleanPath); } catch { entries = []; }
     for (const entry of entries) {
       if (entry.filename === "." || entry.filename === "..") continue;
-      await removeRecursive(sftp, targetPath + "/" + entry.filename);
+      await removeRecursive(sftp, cleanPath + "/" + entry.filename);
     }
-    await sftpRmdir(sftp, targetPath);
+    await sftpRmdir(sftp, cleanPath);
   } else {
-    await sftpUnlink(sftp, targetPath);
+    await sftpUnlink(sftp, cleanPath);
   }
 }
 
@@ -757,7 +766,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "write_file") {
-      const result = await withHomeAndSftp(async (conn, sftp, homeDir) => {
+      const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
+        return await withHomeAndSftp(async (conn, sftp, homeDir) => {
         let notes = [];
         try {
           const stat = await sftpStat(sftp, args.remote_path);
@@ -775,34 +785,36 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         await sftpWriteFile(sftp, args.remote_path, args.content);
         return notes;
       });
-      const msg = `Written to ${args.remote_path}` + (result.length ? ` (${result.join("; ")})` : "");
-      return { content: [{ type: "text", text: msg }] };
+    });
+    const msg = `Written to ${args.remote_path}` + (result.length ? ` (${result.join("; ")})` : "");
+    return { content: [{ type: "text", text: msg }] };
+  }
+
+  // ----- update_file -----
+  if (name === "update_file") {
+    const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
+    const hasLine = args.line !== undefined && args.line !== null;
+    if (!hasSearch && !hasLine) {
+      return { isError: true, content: [{ type: "text", text: "Provide 'search' (search/replace mode) or 'line' (line operation mode). See tool description for details." }] };
+    }
+    if (hasSearch && hasLine) {
+      return { isError: true, content: [{ type: "text", text: "Provide either 'search' or 'line', not both. These modes are mutually exclusive." }] };
+    }
+    if (hasLine && (!Number.isInteger(args.line) || args.line < 1)) {
+      return { isError: true, content: [{ type: "text", text: `'line' must be a positive integer, got ${args.line}.` }] };
+    }
+    if (args.end_line !== undefined && args.end_line !== null && (!Number.isInteger(args.end_line) || args.end_line < 1)) {
+      return { isError: true, content: [{ type: "text", text: `'end_line' must be a positive integer, got ${args.end_line}.` }] };
+    }
+    if (hasLine && args.end_line && args.line > args.end_line) {
+      return { isError: true, content: [{ type: "text", text: `'line' (${args.line}) must be <= 'end_line' (${args.end_line}).` }] };
+    }
+    if (args.position && !["before", "after"].includes(args.position)) {
+      return { isError: true, content: [{ type: "text", text: `'position' must be 'before' or 'after', got "${args.position}".` }] };
     }
 
-    // ----- update_file -----
-    if (name === "update_file") {
-      const hasSearch = args.search !== undefined && args.search !== null && args.search !== "";
-      const hasLine = args.line !== undefined && args.line !== null;
-      if (!hasSearch && !hasLine) {
-        return { isError: true, content: [{ type: "text", text: "Provide 'search' (search/replace mode) or 'line' (line operation mode). See tool description for details." }] };
-      }
-      if (hasSearch && hasLine) {
-        return { isError: true, content: [{ type: "text", text: "Provide either 'search' or 'line', not both. These modes are mutually exclusive." }] };
-      }
-      if (hasLine && (!Number.isInteger(args.line) || args.line < 1)) {
-        return { isError: true, content: [{ type: "text", text: `'line' must be a positive integer, got ${args.line}.` }] };
-      }
-      if (args.end_line !== undefined && args.end_line !== null && (!Number.isInteger(args.end_line) || args.end_line < 1)) {
-        return { isError: true, content: [{ type: "text", text: `'end_line' must be a positive integer, got ${args.end_line}.` }] };
-      }
-      if (hasLine && args.end_line && args.line > args.end_line) {
-        return { isError: true, content: [{ type: "text", text: `'line' (${args.line}) must be <= 'end_line' (${args.end_line}).` }] };
-      }
-      if (args.position && !["before", "after"].includes(args.position)) {
-        return { isError: true, content: [{ type: "text", text: `'position' must be 'before' or 'after', got "${args.position}".` }] };
-      }
-
-      const result = await withHomeAndSftp(async (conn, sftp, homeDir) => {
+    const result = await withFileLock(`${args.server}:${args.remote_path}`, async () => {
+      return await withHomeAndSftp(async (conn, sftp, homeDir) => {
         const original = (await sftpReadFile(sftp, args.remote_path)).toString("utf8");
         let notes, modified;
 
@@ -871,9 +883,10 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         await sftpWriteFile(sftp, args.remote_path, modified);
         return { notes, skipped: false };
       });
+    });
 
-      return { content: [{ type: "text", text: result.notes.join("; ") }] };
-    }
+    return { content: [{ type: "text", text: result.notes.join("; ") }] };
+  }
 
     // ----- sftp_rm -----
     if (name === "sftp_rm") {
