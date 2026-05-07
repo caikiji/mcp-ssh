@@ -384,7 +384,8 @@ async function removeRecursive(sftp, targetPath) {
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)}GB`;
 }
 
 
@@ -670,7 +671,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   async function withHomeAndSftp(fn) {
     const conn = await connect(sshCfg);
     try {
-      const homeResult = await execOnConn(conn, "echo $HOME");
+      const homeResult = await execOnConn(conn, "echo $HOME", 10);
       const homeDir = homeResult.stdout.trim() || "/root";
       const sftp = await sftpOpen(conn);
       try {
@@ -696,9 +697,6 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { isError: true, content: [{ type: "text", text: `'timeout' must be a positive number (seconds), got ${args.timeout}.` }] };
       }
       const timeout = args.timeout !== undefined && args.timeout !== null ? args.timeout : undefined;
-      if (args.sudo_password && args.pty === false) {
-        return { isError: true, content: [{ type: "text", text: "Cannot set sudo_password with pty: false. sudo requires a TTY." }] };
-      }
       const execOpts = {};
       if (args.sudo_password) execOpts.sudoPassword = args.sudo_password;
       if (args.pty) execOpts.pty = true;
