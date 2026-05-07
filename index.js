@@ -273,6 +273,8 @@ function execOnConn(conn, command, timeoutSec, opts = {}) {
     conn.exec(actualCommand, opts.pty ? { pty: true } : {}, (err, stream) => {
       if (err) { cleanup(); debug(`exec error: ${err.message}`); reject(err); return; }
       let stdout = "", stderr = "";
+      stream.on("error", (e) => debug(`exec stream error: ${e.message}`));
+      stream.stderr.on("error", (e) => debug(`exec stderr error: ${e.message}`));
 
       if (opts.sudoPassword) {
         stream.stdin.write(opts.sudoPassword + "\n");
@@ -296,6 +298,7 @@ function sftpOpen(conn) {
     conn.sftp((err, sftp) => {
       if (err) { debug(`SFTP open error: ${err.message}`); reject(err); return; }
       debug("SFTP channel opened");
+      sftp.on("error", (e) => debug(`SFTP channel error: ${e.message}`));
       resolve(sftp);
     });
   });
@@ -645,7 +648,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     if (name === "exec") {
-      if (!args.command || typeof args.command !== "string") {
+      if (!args.command || typeof args.command !== "string" || !args.command.trim()) {
         return { isError: true, content: [{ type: "text", text: "Missing or invalid required argument: command must be a non-empty string." }] };
       }
       if (args.timeout !== undefined && args.timeout !== null && (!Number.isFinite(args.timeout) || args.timeout <= 0)) {
@@ -749,6 +752,8 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         } catch {
           // File does not exist, no backup needed
         }
+        const parentDir = path.dirname(args.remote_path);
+        if (parentDir !== "/") await ensureDirRecursive(sftp, parentDir);
         await sftpWriteFile(sftp, args.remote_path, content);
         return notes;
       });
