@@ -24,6 +24,14 @@ Format: `[name:]user@host[:port]|credential`
 
 Separate multiple servers with `;`.
 
+### SSH_TIMEOUT
+
+Connection timeout in milliseconds (default: `15000`):
+
+```
+SSH_TIMEOUT=30000
+```
+
 ### MCP Client Config
 
 Add to your MCP client config (e.g. Claude Desktop, Cursor):
@@ -55,25 +63,24 @@ Add to your MCP client config (e.g. Claude Desktop, Cursor):
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command` | Run a shell command and get stdout/stderr/exit code |
+| `exec` | `server`, `command` | Run a shell command and get stdout/stderr/exit code. Use for scripts, service management, package operations. Not for file reading (use `read_file`) or file editing (use `update_file`). |
 
 ### File Transfer
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
 | `scp_upload` | `server`, `local_path`, `remote_path` | Upload a local file via SFTP |
-| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP |
+| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP. For quick reads without saving locally, use `read_file` instead. |
 
 ### File Operations
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file content with optional line range |
-| `write_file` | `server`, `remote_path`, `content` | Write/overwrite a file with automatic backup |
-| `update_file` | `server`, `remote_path`, `search`+`replace` **or** `line`+`content` | Search/replace or line-based editing |
-| `sftp_list` | `server`, `remote_path` | List directory contents |
-| `sftp_mkdir` | `server`, `remote_path` | Create directory (mkdir -p) |
-| `sftp_rm` | `server`, `remote_path` | Remove file or directory with trash fallback |
+| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file content with optional line range (offset is 1-indexed). Best for configs, logs, source code. |
+| `write_file` | `server`, `remote_path`, `content` | Create or overwrite a file with automatic backup. For editing existing files (search/replace, line ops), use `update_file` instead. |
+| `update_file` | `server`, `remote_path`, `search`+`replace` **or** `line`+`content`+`[position]` | Edit an existing file: search/replace all occurrences, or line operations (replace, insert before/after, delete range). Backup created before modification. |
+| `sftp_rm` | `server`, `remote_path` | Remove file/directory with trash protection. Small files (<100MB) move to `~/.mcp-ssh/trash/`. Large files and directories delete permanently with warning. |
+| `sftp_stat` | `server`, `remote_path` | Get file/directory metadata: type, size, permissions, modification time, uid/gid. |
 
 ## Backup & Trash
 
