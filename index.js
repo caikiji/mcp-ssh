@@ -8,6 +8,7 @@ import {
 import { Client } from "ssh2";
 import fs from "fs";
 import path from "path";
+import sshConfig from "ssh-config";
 
 const LARGE_FILE_THRESHOLD = (parseInt(process.env.SSH_LARGE_FILE_MB || "10", 10) || 10) * 1024 * 1024;
 const BACKUP_DIR_NAME = ".mcp-ssh";
@@ -15,6 +16,7 @@ const LARGE_MB = LARGE_FILE_THRESHOLD / (1024 * 1024);
 const SSH_TIMEOUT = parseInt(process.env.SSH_TIMEOUT || "15000", 10);
 const DEBUG = process.env.SSH_DEBUG === "true" || process.env.SSH_DEBUG === "1";
 const debug = DEBUG ? (...args) => console.error("[mcp-ssh]", ...args) : () => {};
+const LOCAL_HOME = () => process.env.HOME || "/root";
 
 function parseServers() {
   const raw = process.env.SSH_SERVICES || "";
@@ -23,6 +25,21 @@ function parseServers() {
   const servers = {};
   const parts = raw.split(";").filter(Boolean);
 
+  let configCache;
+  function getConfig() {
+    if (configCache) return configCache;
+    const configPath = path.join(LOCAL_HOME(), ".ssh", "config");
+    try {
+      const raw = fs.readFileSync(configPath, "utf8");
+      configCache = sshConfig.parse(raw);
+      debug(`loaded ~/.ssh/config (${configCache.length} directives)`);
+    } catch {
+      debug(`no ~/.ssh/config found`);
+      configCache = [];
+    }
+    return configCache;
+  }
+
   for (const part of parts) {
     const pipeIdx = part.indexOf("|");
     if (pipeIdx === -1) throw new Error(`Missing | separator in entry: ${part}`);
@@ -30,36 +47,66 @@ function parseServers() {
     const connStr = part.substring(0, pipeIdx);
     const credential = part.substring(pipeIdx + 1);
 
+    let name, user, host, port = 22;
+
     const atIdx = connStr.indexOf("@");
-    if (atIdx === -1) throw new Error(`Missing @ in connection string: ${connStr}`);
+    if (atIdx === -1) {
+      // ~/.ssh/config host reference: [name:]config_host
+      const colonIdx = connStr.indexOf(":");
+      const configHost = colonIdx !== -1 ? connStr.substring(colonIdx + 1) : connStr;
+      name = colonIdx !== -1 ? connStr.substring(0, colonIdx) : null;
 
-    const beforeAt = connStr.substring(0, atIdx);
-    const afterAt = connStr.substring(atIdx + 1);
+      const cfg = getConfig().find((d) => d.param === "Host" && d.value.split(/\s+/).some((h) => h === configHost));
+      if (!cfg) throw new Error(`SSH config host "${configHost}" not found in ~/.ssh/config`);
 
-    let name, user;
-    const colonBefore = beforeAt.indexOf(":");
-    if (colonBefore !== -1) {
-      name = beforeAt.substring(0, colonBefore);
-      user = beforeAt.substring(colonBefore + 1);
+      const val = (key) => { const n = cfg.config?.find((d) => d.param === key); return n ? n.value : undefined; };
+
+      host = val("HostName");
+      user = val("User");
+      const cfgPort = val("Port");
+      if (cfgPort) port = parseInt(cfgPort, 10);
+      name = name || configHost;
+
+      if (!host) throw new Error(`HostName missing for config host "${configHost}"`);
+
+      // If no credential provided, use IdentityFile from config
+      if (!credential) {
+        const identityFile = val("IdentityFile");
+        if (identityFile) {
+          const resolved = identityFile.replace(/^~/, LOCAL_HOME());
+          const finalPath = path.resolve(resolved);
+          servers[name] = { user, host, port, credential: finalPath };
+          continue;
+        }
+        throw new Error(`No credential and no IdentityFile for config host "${configHost}"`);
+      }
     } else {
-      user = beforeAt;
-      name = null;
-    }
+      const beforeAt = connStr.substring(0, atIdx);
+      const afterAt = connStr.substring(atIdx + 1);
 
-    let host, port = 22;
-    const colonAfter = afterAt.indexOf(":");
-    if (colonAfter !== -1) {
-      host = afterAt.substring(0, colonAfter);
-      port = parseInt(afterAt.substring(colonAfter + 1), 10);
-    } else {
-      host = afterAt;
-    }
+      const colonBefore = beforeAt.indexOf(":");
+      if (colonBefore !== -1) {
+        name = beforeAt.substring(0, colonBefore);
+        user = beforeAt.substring(colonBefore + 1);
+      } else {
+        user = beforeAt;
+        name = null;
+      }
 
-    if (isNaN(port) || port < 1 || port > 65535) {
-      throw new Error(`Invalid port in entry: ${part}`);
-    }
+      const colonAfter = afterAt.indexOf(":");
+      if (colonAfter !== -1) {
+        host = afterAt.substring(0, colonAfter);
+        port = parseInt(afterAt.substring(colonAfter + 1), 10);
+      } else {
+        host = afterAt;
+      }
 
-    name = name || host;
+      if (isNaN(port) || port < 1 || port > 65535) {
+        throw new Error(`Invalid port in entry: ${part}`);
+      }
+
+      name = name || host;
+    }
 
     if (servers[name]) {
       let i = 2;

@@ -18,6 +18,16 @@ SSH_SERVICES="web:root@192.168.1.100:22|/path/to/id_rsa;db:deploy@db.internal|db
 
 Format: `[name:]user@host[:port]|credential`
 
+For servers already defined in `~/.ssh/config`, use the config Host name instead:
+
+```
+SSH_SERVICES="production|password;db:db-server|"
+```
+
+- Without `@` → treats the value as a `~/.ssh/config` Host name, reads HostName/User/Port/IdentityFile from config.
+- `[name:]config_host` — optional display name before the config Host name.
+- **credential** — if omitted (trailing `|`), uses `IdentityFile` from the config entry.
+
 - **name** — optional, defaults to host. Duplicate names get an auto-increment suffix.
 - **port** — optional, defaults to 22.
 - **credential** — if it's an existing file path, used as SSH private key; otherwise treated as password.

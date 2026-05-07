@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
+    "ssh-config": "^5.1.0",
     "ssh2": "^1.16.0"
   }
 }
