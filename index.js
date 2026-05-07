@@ -147,14 +147,18 @@ function connect(cfg, attempt = 1) {
   });
 }
 
-function execOnConn(conn, command, timeoutSec) {
+function execOnConn(conn, command, timeoutSec, opts = {}) {
   return new Promise((resolve, reject) => {
     let timer;
     let started = Date.now();
     const cleanup = () => clearTimeout(timer);
 
     const trimmed = command.length > 200 ? command.substring(0, 200) + "..." : command;
-    debug(`exec: ${trimmed}` + (timeoutSec ? ` (timeout: ${timeoutSec}s)` : ""));
+    let label = `exec: ${trimmed}`;
+    if (timeoutSec) label += ` (timeout: ${timeoutSec}s)`;
+    if (opts.pty) label += " (pty)";
+    if (opts.sudoPassword) label += " (sudo)";
+    debug(label);
 
     if (timeoutSec && timeoutSec > 0) {
       timer = setTimeout(() => {
@@ -164,9 +168,19 @@ function execOnConn(conn, command, timeoutSec) {
       }, timeoutSec * 1000);
     }
 
-    conn.exec(command, (err, stream) => {
+    let actualCommand = command;
+    if (opts.sudoPassword) {
+      actualCommand = `sudo -S ${command}`;
+    }
+
+    conn.exec(actualCommand, opts.pty ? { pty: true } : {}, (err, stream) => {
       if (err) { cleanup(); debug(`exec error: ${err.message}`); reject(err); return; }
       let stdout = "", stderr = "";
+
+      if (opts.sudoPassword) {
+        stream.stdin.write(opts.sudoPassword + "\n");
+      }
+
       stream.on("close", (code, signal) => {
         cleanup();
         const elapsed = Date.now() - started;
@@ -345,13 +359,15 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "exec",
-      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file). For long-running commands, set the timeout parameter to limit execution time.",
+      description: "Run any shell command on a remote server and return stdout, stderr, and exit code. Use for: running scripts, checking system status, starting/stopping services, package management, or any command-line operation. NOT for reading file contents (use read_file) or editing files (use update_file / write_file). For commands requiring sudo, set sudo_password (enables PTY automatically). For other commands needing a TTY (apt, screen, etc.), set pty: true.",
       inputSchema: {
         type: "object",
         properties: {
           server: { type: "string", description: "Server name as shown by list_servers" },
           command: { type: "string", description: "Shell command to execute (e.g. 'ls -la /etc', 'systemctl status nginx', 'df -h')" },
-          timeout: { type: "number", description: "Maximum execution time in seconds. Omit for no timeout. Use for commands that might hang (e.g. 'apt upgrade', long scripts)." },
+          timeout: { type: "number", description: "Maximum execution time in seconds. Use for commands that might hang (e.g. 'apt upgrade', long scripts)." },
+          pty: { type: "boolean", description: "Allocate a pseudo-terminal (PTY). Set to true for commands that require a TTY (sudo without password, apt, tmux, etc.)." },
+          sudo_password: { type: "string", description: "Password for sudo. When set, the command runs via 'sudo -S' and the password is sent automatically. Enables PTY implicitly." },
         },
         required: ["server", "command"],
       },
@@ -599,8 +615,14 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { isError: true, content: [{ type: "text", text: `'timeout' must be a positive number (seconds), got ${args.timeout}.` }] };
       }
       const timeout = args.timeout !== undefined && args.timeout !== null ? args.timeout : undefined;
+      if (args.sudo_password && args.pty === false) {
+        return { isError: true, content: [{ type: "text", text: "Cannot set sudo_password with pty: false. sudo requires a TTY." }] };
+      }
+      const execOpts = {};
+      if (args.sudo_password) execOpts.sudoPassword = args.sudo_password;
+      if (args.pty || args.sudo_password) execOpts.pty = true;
       const result = await withConn(async (conn) => {
-        return await execOnConn(conn, args.command, timeout);
+        return await execOnConn(conn, args.command, timeout, execOpts);
       });
       const parts = [];
       if (result.stdout) parts.push({ type: "text", text: result.stdout });

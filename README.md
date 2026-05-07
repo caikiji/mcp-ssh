@@ -61,7 +61,7 @@ Add to your MCP client config (e.g. Claude Code, Codex, OpenCode):
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command`, `[timeout]` | Run a shell command and get stdout/stderr/exit code. `timeout` limits execution time in seconds (use for long-running or risky commands). Use for scripts, service management, package operations. Not for file reading (use `read_file`) or file editing (use `update_file`). |
+| `exec` | `server`, `command`, `[timeout]`, `[pty]`, `[sudo_password]` | Run a shell command and get stdout/stderr/exit code. `timeout` limits execution (seconds). `pty: true` allocates a TTY for commands that need one (apt, tmux, etc.). `sudo_password` runs via `sudo -S <cmd>` automatically; enables PTY implicitly. Use for scripts, service management, package ops. Not for file reading (use `read_file`) or editing (use `update_file`). |
 
 ### File Transfer
 
