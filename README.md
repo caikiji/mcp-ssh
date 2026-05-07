@@ -24,13 +24,9 @@ Format: `[name:]user@host[:port]|credential`
 
 Separate multiple servers with `;`.
 
-### SSH_TIMEOUT
+Optional settings:
 
-Connection timeout in milliseconds (default: `15000`):
-
-```
-SSH_TIMEOUT=30000
-```
+- **`SSH_TIMEOUT`** — connection timeout in milliseconds (default: `15000`). Increase for slow networks, decrease for quick failure detection.
 
 ### MCP Client Config
 
@@ -63,7 +59,7 @@ Add to your MCP client config (e.g. Claude Desktop, Cursor):
 
 | Tool | Arguments | Description |
 |------|-----------|-------------|
-| `exec` | `server`, `command` | Run a shell command and get stdout/stderr/exit code. Use for scripts, service management, package operations. Not for file reading (use `read_file`) or file editing (use `update_file`). |
+| `exec` | `server`, `command`, `[timeout]` | Run a shell command and get stdout/stderr/exit code. `timeout` limits execution time in seconds (use for long-running or risky commands). Use for scripts, service management, package operations. Not for file reading (use `read_file`) or file editing (use `update_file`). |
 
 ### File Transfer
 
@@ -78,7 +74,7 @@ Add to your MCP client config (e.g. Claude Desktop, Cursor):
 |------|-----------|-------------|
 | `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file content with optional line range (offset is 1-indexed). Best for configs, logs, source code. |
 | `write_file` | `server`, `remote_path`, `content` | Create or overwrite a file with automatic backup. For editing existing files (search/replace, line ops), use `update_file` instead. |
-| `update_file` | `server`, `remote_path`, `search`+`replace` **or** `line`+`content`+`[position]` | Edit an existing file: search/replace all occurrences, or line operations (replace, insert before/after, delete range). Backup created before modification. |
+| `update_file` | `server`, `remote_path`, `search`+`replace`+`[replace_all]` **or** `line`+`content`+`[position]` | Edit an existing file: search/replace all or first occurrence (`replace_all: false` for single), or line operations (replace, insert before/after, delete range). Backup created before modification. |
 | `sftp_rm` | `server`, `remote_path` | Remove file/directory with trash protection. Small files (<100MB) move to `~/.mcp-ssh/trash/`. Large files and directories delete permanently with warning. |
 | `sftp_stat` | `server`, `remote_path` | Get file/directory metadata: type, size, permissions, modification time, uid/gid. |
 
