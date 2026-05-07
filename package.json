@@ -1,6 +1,17 @@
 {
-  "name": "mcp-ssh",
+  "name": "@caikiji/mcp-ssh",
   "version": "1.0.0",
+  "description": "MCP server for SSH remote execution, file transfer, and file editing with backup/trash management",
+  "keywords": ["mcp", "ssh", "sftp", "modelcontextprotocol"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caikiji/mcp-ssh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/caikiji/mcp-ssh/issues"
+  },
+  "homepage": "https://github.com/caikiji/mcp-ssh",
   "type": "module",
   "bin": {
     "mcp-ssh": "index.js"

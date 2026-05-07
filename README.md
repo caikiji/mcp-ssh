@@ -1,0 +1,87 @@
+# @caikiji/mcp-ssh
+
+MCP server for SSH remote execution, file transfer, and file editing with automatic backup/trash management.
+
+## Installation
+
+```bash
+npm install -g @caikiji/mcp-ssh
+```
+
+## Configuration
+
+Set the `SSH_SERVICES` environment variable to register one or more servers:
+
+```
+SSH_SERVICES="web:root@192.168.1.100:22|/path/to/id_rsa;db:deploy@db.internal|db_password;dev@dev.box:2222|~/dev_key"
+```
+
+Format: `[name:]user@host[:port]|credential`
+
+- **name** — optional, defaults to host. Duplicate names get an auto-increment suffix.
+- **port** — optional, defaults to 22.
+- **credential** — if it's an existing file path, used as SSH private key; otherwise treated as password.
+
+Separate multiple servers with `;`.
+
+### MCP Client Config
+
+Add to your MCP client config (e.g. Claude Desktop, Cursor):
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "npx",
+      "args": ["-y", "@caikiji/mcp-ssh"],
+      "env": {
+        "SSH_SERVICES": "web:root@192.168.1.100|/path/to/key;db:deploy@db.internal|mypassword"
+      }
+    }
+  }
+}
+```
+
+## Tools
+
+### Server Management
+
+| Tool | Description |
+|------|-------------|
+| `list_servers` | List all configured servers with address and auth type |
+| `backup_status` | Show disk usage for backups and trash across all servers |
+
+### Command Execution
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `exec` | `server`, `command` | Run a shell command and get stdout/stderr/exit code |
+
+### File Transfer
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `scp_upload` | `server`, `local_path`, `remote_path` | Upload a local file via SFTP |
+| `scp_download` | `server`, `remote_path`, `local_path` | Download a remote file via SFTP |
+
+### File Operations
+
+| Tool | Arguments | Description |
+|------|-----------|-------------|
+| `read_file` | `server`, `remote_path`, `[offset]`, `[limit]` | Read file content with optional line range |
+| `write_file` | `server`, `remote_path`, `content` | Write/overwrite a file with automatic backup |
+| `update_file` | `server`, `remote_path`, `search`+`replace` **or** `line`+`content` | Search/replace or line-based editing |
+| `sftp_list` | `server`, `remote_path` | List directory contents |
+| `sftp_mkdir` | `server`, `remote_path` | Create directory (mkdir -p) |
+| `sftp_rm` | `server`, `remote_path` | Remove file or directory with trash fallback |
+
+## Backup & Trash
+
+Files are automatically protected:
+
+- **write_file / update_file**: before modifying, the original file is backed up with rotational retention (`.bak.1` ← `.bak.2` ← `.bak.3`) under `~/.mcp-ssh/backups/<server>/<path>`.
+- **sftp_rm**: small files (<100MB) are moved to `~/.mcp-ssh/trash/<server>/<path>.<timestamp>` instead of permanent deletion.
+- **Large file skip**: files over 100MB skip backup/trash with a clear notification.
+- **Graceful degradation**: if backup or trash fails, operations proceed with a warning.
+
+Use `backup_status` to check disk usage at any time.
