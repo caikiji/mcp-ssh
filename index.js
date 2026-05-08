@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import sshConfig from "ssh-config";
 
+const PKG = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const LARGE_FILE_THRESHOLD = (parseInt(process.env.SSH_LARGE_FILE_MB || "10", 10) || 10) * 1024 * 1024;
 const BACKUP_DIR_NAME = ".mcp-ssh";
 const LARGE_MB = LARGE_FILE_THRESHOLD / (1024 * 1024);
@@ -466,7 +467,7 @@ async function doTrash(sftp, filePath, trashPath) {
 }
 
 const mcpServer = new Server(
-  { name: "mcp-ssh", version: "1.0.0" },
+  { name: "mcp-ssh", version: PKG.version },
   { capabilities: { tools: {} } },
 );
 
